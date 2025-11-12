@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Query
 from ..schemas import ApiResponse, ReportsResponse, DownloadResponse
 from ..services.mock_data import generate_mock_reports
-from ..services.pdf_generator import generate_report_pdf, save_pdf_locally
+from ..services.pdf_generator import generate_report_pdf, save_pdf_locally, upload_to_s3
+from ..config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -23,6 +24,7 @@ async def get_reports(
     except Exception as e:
         return ApiResponse(success=False, data={"reports": [], "total": 0, "hasMore": False}, error=str(e))
 
+
 @router.get("/{report_id}/download", response_model=ApiResponse[DownloadResponse])
 async def get_report_download_url(report_id: str):
     """
@@ -32,27 +34,35 @@ async def get_report_download_url(report_id: str):
     """
     
     try:
-        # Mock URL
-        url = f"https://stockplay-reports.s3.amazonaws.com/reports/{report_id}.pdf"
+        # 환경변수에서 S3 버킷 이름 가져오기
+        bucket_name = settings.S3_BUCKET_NAME
+        region = settings.AWS_REGION
+        
+        # S3 URL 생성
+        url = f"https://{bucket_name}.s3.{region}.amazonaws.com/reports/{report_id}.pdf"
+        
         return ApiResponse(
             success=True,
             data={"url": url, "expiresIn": 3600}
         )
     except Exception as e:
-        return ApiResponse(success=False, data={"url": "", "expiresIn": 0}, error=str(e))
+        return ApiResponse(
+            success=False, 
+            data={"url": "", "expiresIn": 0}, 
+            error=str(e)
+        )
 
 
 @router.post("/{report_id}/generate-pdf")
 async def generate_pdf(report_id: str):
     """
-    리포트 PDF 생성
+    리포트 PDF 생성 및 S3 업로드
     
     - **report_id**: 리포트 ID
     """
     
     try:
         # Mock 리포트 데이터 조회
-        from ..services.mock_data import generate_mock_reports
         reports_data = generate_mock_reports(limit=10, offset=0)
         
         # 해당 리포트 찾기
@@ -68,19 +78,29 @@ async def generate_pdf(report_id: str):
         # PDF 생성
         pdf_bytes = generate_report_pdf(report)
         
-        # 로컬 저장 (개발용)
+        # 파일명
         filename = f"{report_id}.pdf"
-        filepath = save_pdf_locally(pdf_bytes, filename)
         
-        # TODO: 프로덕션에서는 S3 업로드
-        # from ..services.pdf_generator import upload_to_s3
-        # url = upload_to_s3(pdf_bytes, filename)
+        # 환경에 따라 로컬 저장 또는 S3 업로드
+        if settings.DEBUG:
+            # 개발 환경: 로컬 저장
+            filepath = save_pdf_locally(pdf_bytes, filename)
+            url = f"/data/reports/{filename}"
+            message = "PDF generated and saved locally"
+        else:
+            # 프로덕션 환경: S3 업로드
+            url = upload_to_s3(
+                pdf_bytes, 
+                filename, 
+                bucket_name=settings.S3_BUCKET_NAME
+            )
+            message = "PDF generated and uploaded to S3"
         
         return ApiResponse(
             success=True,
             data={
-                "url": f"/data/reports/{filename}",
-                "message": "PDF generated successfully"
+                "url": url,
+                "message": message
             }
         )
         

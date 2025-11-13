@@ -12,6 +12,7 @@ Globals:
         PYTHONPATH: /var/task
 
 Resources:
+  # 기존 API Lambda
   StockPlayAPI:
     Type: AWS::Serverless::Function
     Properties:
@@ -24,12 +25,15 @@ Resources:
           PYTHONPATH: /var/task
           USE_S3_DATA: "true"
           S3_DATA_BUCKET: "stockplay-data-yjw-20251113"
+          DYNAMODB_TABLE: "stockplay-main"
           DEBUG: "false"
       Policies:
         - S3ReadPolicy:
             BucketName: stockplay-data-yjw-20251113
         - S3CrudPolicy:
             BucketName: stockplay-reports-yjw-20251113
+        - DynamoDBCrudPolicy:
+            TableName: stockplay-main
       Events:
         ApiRoot:
           Type: Api
@@ -42,6 +46,36 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  # 이메일 발송 Lambda
+  EmailSenderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stockplay-email-sender
+      Handler: email_sender.lambda_handler
+      CodeUri: .
+      Description: StockPlay Email Sender (Daily Report)
+      Timeout: 60
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: "stockplay-main"
+          SES_FROM_EMAIL: "yyyyjw@naver.com"
+          S3_REPORT_BUCKET: "stockplay-reports-yjw-20251113"
+          API_URL: "https://rwcdhytnni.execute-api.ap-northeast-2.amazonaws.com/Prod/api"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: stockplay-main
+        - SESCrudPolicy:
+            IdentityName: "*"
+        - S3ReadPolicy:
+            BucketName: stockplay-reports-yjw-20251113
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 0 * * ? *)
+            Description: Send daily report at 9 AM KST (midnight UTC)
+            Enabled: true
+
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint URL"
@@ -50,3 +84,7 @@ Outputs:
   FunctionArn:
     Description: "Lambda Function ARN"
     Value: !GetAtt StockPlayAPI.Arn
+
+  EmailSenderArn:
+    Description: "Email Sender Lambda ARN"
+    Value: !GetAtt EmailSenderFunction.Arn

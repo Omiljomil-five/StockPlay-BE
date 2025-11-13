@@ -8,23 +8,26 @@ class TradingSignal(BaseModel):
     companyName: str
     sector: str
     signalType: str  # "BUY" | "SELL"
-    yoyGrowth: float
-    momGrowth: float
+    yoyGrowth: float  # YoY 유지
+    # momGrowth 제거!
     expectedReturn: float
     confidenceScore: float
+    period: Optional[str] = "1d"  # 기간 추가
 
 class PerformanceMetrics(BaseModel):
     avgReturn: float
     winRate: float
     sharpeRatio: float
     maxDrawdown: float
+    period: Optional[str] = "1d"  # 기간 추가
 
 class SectorAnalysis(BaseModel):
     sector: str
-    avgYoYGrowth: float
-    avgMoMGrowth: float
+    avgYoYGrowth: float  # YoY 유지
+    # avgMoMGrowth 제거!
     signalCount: int
     color: str
+    period: Optional[str] = "1d"  # 기간 추가
 
 class AnalysisResult(BaseModel):
     date: datetime
@@ -35,4 +38,5 @@ class AnalysisResult(BaseModel):
 
 class SignalsQueryParams(BaseModel):
     sector: Optional[str] = None
+    period: Optional[str] = "1d"  # 기간 추가
     limit: Optional[int] = 20

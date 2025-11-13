@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     # API 설정
     API_PREFIX: str = "/api"
     
-    # CORS 설정
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    # CORS 설정 - CloudFront URL 추가!
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:4173,http://localhost:3000,https://dj4zhs98x0113.cloudfront.net"
     
     # AWS 설정
     AWS_REGION: str = "ap-northeast-2"

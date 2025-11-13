@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, HTTPException
 from pydantic import EmailStr
 from ..schemas.common import ApiResponse
 from ..schemas.subscribe import SubscribeRequest, SubscriptionResponse, ToggleNotificationRequest
@@ -27,16 +27,16 @@ async def subscribe(request: SubscribeRequest):
             )
             return ApiResponse(success=True, data=response_data)
         else:
-            return ApiResponse(
-                success=False,
-                data=None,
-                error=result['message']
-            )
+            # ✅ 수정: HTTPException 사용
+            raise HTTPException(status_code=400, detail=result['message'])
+            
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ 구독 등록 API 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{email}", response_model=ApiResponse[SubscriptionResponse])
@@ -59,16 +59,15 @@ async def get_subscription(email: EmailStr = Path(..., description="조회할 �
             )
             return ApiResponse(success=True, data=response_data)
         else:
-            return ApiResponse(
-                success=False,
-                data=None,
-                error="구독 정보를 찾을 수 없습니다."
-            )
+            raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+            
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ 구독 조회 API 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/{email}", response_model=ApiResponse[SubscriptionResponse])
@@ -96,16 +95,15 @@ async def toggle_notification(
             )
             return ApiResponse(success=True, data=response_data)
         else:
-            return ApiResponse(
-                success=False,
-                data=None,
-                error=result['message']
-            )
+            raise HTTPException(status_code=400, detail=result['message'])
+            
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ 알림 설정 API 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/{email}", response_model=ApiResponse[dict])
@@ -125,13 +123,12 @@ async def unsubscribe(email: EmailStr = Path(..., description="삭제할 이메�
                 data={'message': result['message']}
             )
         else:
-            return ApiResponse(
-                success=False,
-                data=None,
-                error=result['message']
-            )
+            raise HTTPException(status_code=400, detail=result['message'])
+            
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ 구독 취소 API 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

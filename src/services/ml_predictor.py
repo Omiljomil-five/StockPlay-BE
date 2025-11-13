@@ -1,17 +1,17 @@
 """
-ML 모델 예측 서비스 (최종 수정 버전)
+ML 모델 예측 서비스 (기간별 예측 지원 버전)
 """
 
 import pickle
 import boto3
 import csv
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
 from io import StringIO
 
 class MLPredictor:
-    """ML 모델 예측 클래스"""
+    """ML 모델 예측 클래스 (기간별 수익률 지원)"""
     
     def __init__(self):
         self.model_path = Path(__file__).parent.parent.parent / 'models' / 'basic_rule_model.pkl'
@@ -36,22 +36,23 @@ class MLPredictor:
         try:
             if self.use_s3:
                 print("📦 S3에서 데이터 로드 시작...")
-                self.surprise_data = self._read_s3_csv('data/problem1_surprise_arima.csv')
+                # 기간별 수익률 데이터 (problem2)
+                self.vendor_data = self._read_s3_csv('data/problem2_vendor_analysis.csv')
                 self.gics_data = self._read_s3_csv('data/gics_all.csv')
-                print(f"✅ Surprise: {len(self.surprise_data)} rows")
+                print(f"✅ Vendor Analysis: {len(self.vendor_data)} rows")
                 print(f"✅ GICS: {len(self.gics_data)} rows")
             else:
                 # 로컬에서는 pandas 사용
                 import pandas as pd
                 data_path = Path(__file__).parent.parent.parent / 'data'
-                surprise_df = pd.read_csv(data_path / 'problem1_surprise_arima.csv')
+                vendor_df = pd.read_csv(data_path / 'problem2_vendor_analysis.csv')
                 gics_df = pd.read_csv(data_path / 'gics_all.csv')
                 
                 # dict로 변환하면서 문자열 strip
-                self.surprise_data = []
-                for _, row in surprise_df.iterrows():
+                self.vendor_data = []
+                for _, row in vendor_df.iterrows():
                     clean_row = {k: str(v).strip() if isinstance(v, str) else v for k, v in row.items()}
-                    self.surprise_data.append(clean_row)
+                    self.vendor_data.append(clean_row)
                 
                 self.gics_data = []
                 for _, row in gics_df.iterrows():
@@ -64,11 +65,11 @@ class MLPredictor:
             print(f"❌ 데이터 로드 실패: {e}")
             import traceback
             traceback.print_exc()
-            self.surprise_data = []
+            self.vendor_data = []
             self.gics_data = []
     
     def _read_s3_csv(self, key: str) -> List[Dict]:
-        """S3에서 CSV 읽기 (완전 정규화)"""
+        """S3에서 CSV 읽기"""
         try:
             print(f"📥 S3에서 읽기: {key}")
             obj = self.s3.get_object(Bucket=self.s3_bucket, Key=key)
@@ -78,24 +79,18 @@ class MLPredictor:
             data = []
             
             for row in reader:
-                # 🔧 완전 정규화: 키와 값 모두 공백 제거
                 normalized_row = {}
                 for k, v in row.items():
-                    # 키: 공백 제거 + 소문자
                     clean_key = k.strip().lower() if k else ''
-                    # 값: 공백 제거
                     clean_value = v.strip() if isinstance(v, str) and v else v
-                    if clean_key:  # 빈 키는 제외
+                    if clean_key:
                         normalized_row[clean_key] = clean_value
                 data.append(normalized_row)
             
             print(f"✅ {key} 로드 완료: {len(data)} rows")
             
-            # 샘플 출력
             if data:
-                sample = data[0]
-                print(f"📊 컬럼: {list(sample.keys())}")
-                print(f"📊 샘플 symbol: '{sample.get('symbol', 'NOT FOUND')}'")
+                print(f"📊 컬럼: {list(data[0].keys())}")
             
             return data
             
@@ -105,21 +100,36 @@ class MLPredictor:
             traceback.print_exc()
             return []
     
-    def prepare_features(self) -> List[Dict[str, Any]]:
-        """모델 입력 피처 준비"""
+    def prepare_features(self, period: str = '1d') -> List[Dict[str, Any]]:
+        """
+        모델 입력 피처 준비 (기간별)
         
-        print(f"🔍 prepare_features 시작")
-        print(f"  - Surprise 데이터: {len(self.surprise_data) if self.surprise_data else 0} rows")
+        Args:
+            period: '1d', '5d', '10d', '20d' 중 하나
+        """
+        print(f"🔍 prepare_features 시작 (기간: {period})")
+        print(f"  - Vendor 데이터: {len(self.vendor_data) if self.vendor_data else 0} rows")
         print(f"  - GICS 데이터: {len(self.gics_data) if self.gics_data else 0} rows")
         
-        if not self.surprise_data or not self.gics_data:
+        if not self.vendor_data or not self.gics_data:
             print("❌ 데이터 부족!")
             return []
+        
+        # 기간 컬럼 매핑
+        period_column_map = {
+            '1d': 'return_post_1d',
+            '2d': 'return_post_2d',
+            '5d': 'return_post_5d',
+            '10d': 'return_post_10d',
+            '20d': 'return_post_20d'
+        }
+        
+        return_column = period_column_map.get(period, 'return_post_1d')
         
         try:
             # 최신 날짜 찾기
             dates = []
-            for row in self.surprise_data:
+            for row in self.vendor_data:
                 date_val = row.get('date', '')
                 if date_val and date_val not in ('', 'nan', 'None'):
                     dates.append(str(date_val).strip())
@@ -133,33 +143,21 @@ class MLPredictor:
             
             # 최신 데이터 필터링
             latest_data = []
-            for row in self.surprise_data:
+            for row in self.vendor_data:
                 date_val = str(row.get('date', '')).strip()
                 if date_val == latest_date:
                     latest_data.append(row)
             
             print(f"📊 최신 데이터: {len(latest_data)} rows")
             
-            # GICS 매핑 (공백 완전 제거)
-            print(f"🔧 GICS 매핑 시작...")
+            # GICS 매핑
             gics_map = {}
-            empty_count = 0
-            
             for row in self.gics_data:
                 symbol = str(row.get('symbol', '')).strip()
                 if symbol and symbol not in ('', 'nan', 'None'):
                     gics_map[symbol] = row
-                else:
-                    empty_count += 1
             
             print(f"✅ GICS 매핑 완료: {len(gics_map)} 종목")
-            if empty_count > 0:
-                print(f"⚠️ 빈 symbol: {empty_count}개")
-            
-            # 샘플 확인
-            if gics_map:
-                sample_symbols = list(gics_map.keys())[:3]
-                print(f"📊 GICS 샘플 symbols: {sample_symbols}")
             
             # Sector 코드 매핑
             sector_to_code = {
@@ -171,11 +169,11 @@ class MLPredictor:
             # 피처 생성
             features = []
             matched_count = 0
-            unmatched_count = 0
             
             for row in latest_data:
                 symbol = str(row.get('symbol', '')).strip()
                 surprise_z_str = str(row.get('surprise_z', '')).strip()
+                expected_return_str = str(row.get(return_column, '')).strip()
                 
                 # surprise_z 검증
                 if not surprise_z_str or surprise_z_str in ('nan', '', 'None'):
@@ -183,6 +181,8 @@ class MLPredictor:
                 
                 try:
                     surprise_z = float(surprise_z_str)
+                    # 기간별 실제 수익률
+                    expected_return = float(expected_return_str) * 100 if expected_return_str not in ('nan', '', 'None') else 0.0
                 except:
                     continue
                 
@@ -195,14 +195,13 @@ class MLPredictor:
                     features.append({
                         'symbol': symbol,
                         'surprise_z': surprise_z,
-                        'gics_code': gics_code
+                        'gics_code': gics_code,
+                        'expected_return': expected_return,  # 실제 수익률
+                        'period': period
                     })
-                else:
-                    unmatched_count += 1
             
             print(f"✅ 피처 준비 완료: {len(features)} rows")
             print(f"   - 매칭 성공: {matched_count}")
-            print(f"   - 매칭 실패: {unmatched_count}")
             
             return features
             
@@ -238,14 +237,22 @@ class MLPredictor:
                 'decision': decision,
                 'surprise_z': float(z_score),
                 'gics_code': int(row['gics_code']),
-                'confidence': float(confidence)
+                'confidence': float(confidence),
+                'expected_return': row['expected_return'],
+                'period': row['period']
             })
         
         return results
     
-    def get_top_signals(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """상위 N개 시그널 조회"""
-        features = self.prepare_features()
+    def get_top_signals(self, limit: int = 20, period: str = '1d') -> List[Dict[str, Any]]:
+        """
+        상위 N개 시그널 조회
+        
+        Args:
+            limit: 결과 개수
+            period: '1d', '5d', '10d', '20d'
+        """
+        features = self.prepare_features(period=period)
         
         if not features:
             print("⚠️ 데이터 없음, Mock 데이터 반환")
@@ -259,22 +266,22 @@ class MLPredictor:
         # 신뢰도 순 정렬
         buy_signals = sorted(buy_signals, key=lambda x: x['confidence'], reverse=True)
         
-        print(f"✅ {len(buy_signals)}개 BUY 시그널 생성")
+        print(f"✅ {len(buy_signals)}개 BUY 시그널 생성 ({period})")
         return buy_signals[:limit]
     
     def _get_mock_signals(self, limit: int) -> List[Dict[str, Any]]:
         """Mock 데이터"""
         mock_data = [
-            {'symbol': '005930', 'decision': 'BUY', 'surprise_z': 2.52, 'gics_code': 4510, 'confidence': 0.85},
-            {'symbol': '000660', 'decision': 'BUY', 'surprise_z': 2.38, 'gics_code': 4520, 'confidence': 0.82},
-            {'symbol': '035720', 'decision': 'BUY', 'surprise_z': 2.25, 'gics_code': 2510, 'confidence': 0.78},
-            {'symbol': '005380', 'decision': 'BUY', 'surprise_z': 2.18, 'gics_code': 3010, 'confidence': 0.75},
-            {'symbol': '051910', 'decision': 'BUY', 'surprise_z': 2.12, 'gics_code': 2010, 'confidence': 0.72},
+            {'symbol': '005930', 'decision': 'BUY', 'surprise_z': 2.52, 'gics_code': 4510, 'confidence': 0.85, 'expected_return': 12.5, 'period': '1d'},
+            {'symbol': '000660', 'decision': 'BUY', 'surprise_z': 2.38, 'gics_code': 4520, 'confidence': 0.82, 'expected_return': 11.3, 'period': '1d'},
+            {'symbol': '035720', 'decision': 'BUY', 'surprise_z': 2.25, 'gics_code': 2510, 'confidence': 0.78, 'expected_return': 10.8, 'period': '1d'},
+            {'symbol': '005380', 'decision': 'BUY', 'surprise_z': 2.18, 'gics_code': 3010, 'confidence': 0.75, 'expected_return': 9.5, 'period': '1d'},
+            {'symbol': '051910', 'decision': 'BUY', 'surprise_z': 2.12, 'gics_code': 2010, 'confidence': 0.72, 'expected_return': 8.7, 'period': '1d'},
         ]
         return mock_data[:limit]
     
     def enrich_signal_data(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """시그널에 추가 정보 병합"""
+        """시그널에 추가 정보 병합 (MoM 제거, YoY 유지)"""
         symbol = signal['symbol']
         
         # GICS 조회
@@ -297,9 +304,8 @@ class MLPredictor:
             company_name = f"종목 {symbol}"
             sector = 'Unknown'
         
-        # 수익률 계산
-        z_score = signal['surprise_z']
-        expected_return = min(25.0, max(5.0, z_score * 5))
+        # 실제 기간별 수익률 사용
+        expected_return = signal.get('expected_return', 0.0)
         
         import random
         
@@ -309,10 +315,11 @@ class MLPredictor:
             'companyName': company_name,
             'sector': sector,
             'signalType': signal['decision'],
-            'yoyGrowth': round(random.uniform(15, 25), 1),
-            'momGrowth': round(random.uniform(8, 18), 1),
-            'expectedReturn': round(expected_return, 1),
-            'confidenceScore': round(signal['confidence'] * 100, 1)
+            'yoyGrowth': round(random.uniform(15, 25), 1),  # YoY 유지
+            # momGrowth 제거됨!
+            'expectedReturn': round(expected_return, 1),  # 실제 수익률
+            'confidenceScore': round(signal['confidence'] * 100, 1),
+            'period': signal.get('period', '1d')
         }
 
 

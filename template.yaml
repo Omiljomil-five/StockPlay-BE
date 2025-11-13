@@ -19,9 +19,17 @@ Resources:
       Handler: lambda_handler.handler
       CodeUri: .
       Description: StockPlay FastAPI Backend
+      Environment:
+        Variables:
+          PYTHONPATH: /var/task
+          USE_S3_DATA: "true"
+          S3_DATA_BUCKET: "stockplay-data-yjw-20251113"
+          DEBUG: "false"
       Policies:
+        - S3ReadPolicy:
+            BucketName: stockplay-data-yjw-20251113
         - S3CrudPolicy:
-            BucketName: stockplay-reports
+            BucketName: stockplay-reports-yjw-20251113
       Events:
         ApiRoot:
           Type: Api

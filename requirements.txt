@@ -32,3 +32,8 @@ uvicorn==0.32.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==15.0.1
+
+# 데이터 처리
+pandas==2.1.4
+numpy==1.26.2
+scikit-learn==1.3.2  # 모델이 sklearn이면 필요

@@ -1,7 +1,3 @@
-"""
-ML 모델 예측 서비스 (기간별 예측 지원 버전)
-"""
-
 import pickle
 import boto3
 import csv
@@ -11,7 +7,7 @@ import os
 from io import StringIO
 
 class MLPredictor:
-    """ML 모델 예측 클래스 (기간별 수익률 지원)"""
+    """ML 모델 예측 클래스 (기간별 수익률 + KOSPI 대비 지원)"""
     
     def __init__(self):
         self.model_path = Path(__file__).parent.parent.parent / 'models' / 'basic_rule_model.pkl'
@@ -39,14 +35,18 @@ class MLPredictor:
                 # 기간별 수익률 데이터 (problem2)
                 self.vendor_data = self._read_s3_csv('data/problem2_vendor_analysis.csv')
                 self.gics_data = self._read_s3_csv('data/gics_all.csv')
+                # ✅ KOSPI 데이터 로드 추가
+                self.kospi_data = self._read_s3_csv('data/kospi.csv')
                 print(f"✅ Vendor Analysis: {len(self.vendor_data)} rows")
                 print(f"✅ GICS: {len(self.gics_data)} rows")
+                print(f"✅ KOSPI: {len(self.kospi_data)} rows")
             else:
                 # 로컬에서는 pandas 사용
                 import pandas as pd
                 data_path = Path(__file__).parent.parent.parent / 'data'
                 vendor_df = pd.read_csv(data_path / 'problem2_vendor_analysis.csv')
                 gics_df = pd.read_csv(data_path / 'gics_all.csv')
+                kospi_df = pd.read_csv(data_path / 'kospi.csv')
                 
                 # dict로 변환하면서 문자열 strip
                 self.vendor_data = []
@@ -59,6 +59,11 @@ class MLPredictor:
                     clean_row = {k: str(v).strip() if isinstance(v, str) else v for k, v in row.items()}
                     self.gics_data.append(clean_row)
                 
+                self.kospi_data = []
+                for _, row in kospi_df.iterrows():
+                    clean_row = {k: str(v).strip() if isinstance(v, str) else v for k, v in row.items()}
+                    self.kospi_data.append(clean_row)
+                
                 print(f"✅ 로컬 데이터 로드 완료")
             
         except Exception as e:
@@ -67,6 +72,7 @@ class MLPredictor:
             traceback.print_exc()
             self.vendor_data = []
             self.gics_data = []
+            self.kospi_data = []
     
     def _read_s3_csv(self, key: str) -> List[Dict]:
         """S3에서 CSV 읽기"""
@@ -99,6 +105,29 @@ class MLPredictor:
             import traceback
             traceback.print_exc()
             return []
+    
+    def _calculate_kospi_return(self) -> float:
+        """
+        KOSPI 평균 수익률 계산 (간단한 버전)
+        최신 2개 데이터로 단기 수익률 계산
+        """
+        if not self.kospi_data or len(self.kospi_data) < 2:
+            print("⚠️ KOSPI 데이터 부족, 기본값 0.0 사용")
+            return 0.0
+        
+        try:
+            # 최신 2개 데이터로 수익률 계산
+            latest = float(self.kospi_data[-1].get('close', 0))
+            previous = float(self.kospi_data[-2].get('close', 0))
+            
+            if previous > 0:
+                kospi_return = ((latest - previous) / previous) * 100
+                print(f"📊 KOSPI 수익률: {kospi_return:.2f}%")
+                return kospi_return
+            return 0.0
+        except Exception as e:
+            print(f"⚠️ KOSPI 수익률 계산 실패: {e}")
+            return 0.0
     
     def prepare_features(self, period: str = '1d') -> List[Dict[str, Any]]:
         """
@@ -212,25 +241,39 @@ class MLPredictor:
             return []
     
     def predict(self, features: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """규칙 기반 예측"""
+        """
+        규칙 기반 예측 (KOSPI 대비)
+        
+        시그널 분류:
+        - BUY: 예상 수익률 > 0
+        - HOLD: 예상 < 0 && 예상 > KOSPI (손실이지만 지수보다 나음)
+        - SELL: 예상 < KOSPI (지수보다 나쁨)
+        """
         if not features:
             return []
+        
+        # KOSPI 평균 수익률 계산
+        kospi_avg_return = self._calculate_kospi_return()
         
         results = []
         
         for row in features:
             z_score = row['surprise_z']
+            expected_return = row['expected_return']
             
-            # 규칙 기반 분류
-            if z_score > self.z_threshold:
-                decision = 'BUY'
+            # 🎯 새로운 시그널 분류 로직 (KOSPI 대비)
+            if expected_return > 0:
+                decision = 'BUY'  # 수익 예상
                 confidence = min(0.95, 0.5 + (z_score / 10))
-            elif z_score < -self.z_threshold:
-                decision = 'SELL'
-                confidence = min(0.95, 0.5 + (abs(z_score) / 10))
+            elif expected_return < 0 and expected_return > kospi_avg_return:
+                decision = 'HOLD'  # 손실이지만 KOSPI보다 나음
+                confidence = 0.6
             else:
-                decision = 'HOLD'
-                confidence = 0.5
+                decision = 'SELL'  # KOSPI보다 나쁨
+                confidence = min(0.95, 0.5 + (abs(z_score) / 10))
+            
+            # KOSPI 대비 상대 성과
+            vs_kospi = expected_return - kospi_avg_return
             
             results.append({
                 'symbol': row['symbol'],
@@ -238,7 +281,9 @@ class MLPredictor:
                 'surprise_z': float(z_score),
                 'gics_code': int(row['gics_code']),
                 'confidence': float(confidence),
-                'expected_return': row['expected_return'],
+                'expected_return': expected_return,
+                'vs_kospi': vs_kospi,  # ✅ KOSPI 대비 추가
+                'kospi_return': kospi_avg_return,  # ✅ KOSPI 수익률 추가
                 'period': row['period']
             })
         
@@ -246,7 +291,7 @@ class MLPredictor:
     
     def get_top_signals(self, limit: int = 20, period: str = '1d') -> List[Dict[str, Any]]:
         """
-        상위 N개 시그널 조회
+        상위 N개 시그널 조회 (랜덤 정렬, 모든 타입 포함)
         
         Args:
             limit: 결과 개수
@@ -260,28 +305,31 @@ class MLPredictor:
         
         predictions = self.predict(features)
         
-        # BUY 시그널만 필터링
-        buy_signals = [p for p in predictions if p['decision'] == 'BUY']
+        # ✅ 모든 시그널 포함 (BUY, HOLD, SELL)
+        # ✅ 랜덤 정렬
+        import random
+        random.shuffle(predictions)
         
-        # 신뢰도 순 정렬
-        buy_signals = sorted(buy_signals, key=lambda x: x['confidence'], reverse=True)
+        buy_count = sum(1 for s in predictions[:limit] if s['decision'] == 'BUY')
+        hold_count = sum(1 for s in predictions[:limit] if s['decision'] == 'HOLD')
+        sell_count = sum(1 for s in predictions[:limit] if s['decision'] == 'SELL')
         
-        print(f"✅ {len(buy_signals)}개 BUY 시그널 생성 ({period})")
-        return buy_signals[:limit]
+        print(f"✅ {len(predictions[:limit])}개 시그널 생성 ({period}) - BUY: {buy_count}, HOLD: {hold_count}, SELL: {sell_count}")
+        return predictions[:limit]
     
     def _get_mock_signals(self, limit: int) -> List[Dict[str, Any]]:
         """Mock 데이터"""
         mock_data = [
-            {'symbol': '005930', 'decision': 'BUY', 'surprise_z': 2.52, 'gics_code': 4510, 'confidence': 0.85, 'expected_return': 12.5, 'period': '1d'},
-            {'symbol': '000660', 'decision': 'BUY', 'surprise_z': 2.38, 'gics_code': 4520, 'confidence': 0.82, 'expected_return': 11.3, 'period': '1d'},
-            {'symbol': '035720', 'decision': 'BUY', 'surprise_z': 2.25, 'gics_code': 2510, 'confidence': 0.78, 'expected_return': 10.8, 'period': '1d'},
-            {'symbol': '005380', 'decision': 'BUY', 'surprise_z': 2.18, 'gics_code': 3010, 'confidence': 0.75, 'expected_return': 9.5, 'period': '1d'},
-            {'symbol': '051910', 'decision': 'BUY', 'surprise_z': 2.12, 'gics_code': 2010, 'confidence': 0.72, 'expected_return': 8.7, 'period': '1d'},
+            {'symbol': '005930', 'decision': 'BUY', 'surprise_z': 2.52, 'gics_code': 4510, 'confidence': 0.85, 'expected_return': 12.5, 'vs_kospi': 10.5, 'kospi_return': 2.0, 'period': '1d'},
+            {'symbol': '000660', 'decision': 'BUY', 'surprise_z': 2.38, 'gics_code': 4520, 'confidence': 0.82, 'expected_return': 11.3, 'vs_kospi': 9.3, 'kospi_return': 2.0, 'period': '1d'},
+            {'symbol': '035720', 'decision': 'HOLD', 'surprise_z': -0.5, 'gics_code': 2510, 'confidence': 0.6, 'expected_return': -1.2, 'vs_kospi': -3.2, 'kospi_return': 2.0, 'period': '1d'},
+            {'symbol': '005380', 'decision': 'BUY', 'surprise_z': 2.18, 'gics_code': 3010, 'confidence': 0.75, 'expected_return': 9.5, 'vs_kospi': 7.5, 'kospi_return': 2.0, 'period': '1d'},
+            {'symbol': '051910', 'decision': 'BUY', 'surprise_z': 2.12, 'gics_code': 2010, 'confidence': 0.72, 'expected_return': 8.7, 'vs_kospi': 6.7, 'kospi_return': 2.0, 'period': '1d'},
         ]
         return mock_data[:limit]
     
     def enrich_signal_data(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """시그널에 추가 정보 병합 (MoM 제거, YoY 유지)"""
+        """시그널에 추가 정보 병합 (MoM 제거, YoY 유지, KOSPI 대비 추가)"""
         symbol = signal['symbol']
         
         # GICS 조회
@@ -306,6 +354,8 @@ class MLPredictor:
         
         # 실제 기간별 수익률 사용
         expected_return = signal.get('expected_return', 0.0)
+        vs_kospi = signal.get('vs_kospi', 0.0)
+        kospi_return = signal.get('kospi_return', 0.0)
         
         import random
         
@@ -315,9 +365,12 @@ class MLPredictor:
             'companyName': company_name,
             'sector': sector,
             'signalType': signal['decision'],
+            'surpriseZ': round(signal.get('surprise_z', 0.0), 2),  # ✅ Surprise Z 추가
             'yoyGrowth': round(random.uniform(15, 25), 1),  # YoY 유지
             # momGrowth 제거됨!
             'expectedReturn': round(expected_return, 1),  # 실제 수익률
+            'vsKospi': round(vs_kospi, 1),  # ✅ KOSPI 대비 추가
+            'kospiReturn': round(kospi_return, 1),  # ✅ KOSPI 수익률 추가
             'confidenceScore': round(signal['confidence'] * 100, 1),
             'period': signal.get('period', '1d')
         }

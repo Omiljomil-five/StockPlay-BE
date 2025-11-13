@@ -1,105 +1,225 @@
 """
-ML 모델 예측 서비스 (규칙 기반)
+ML 모델 예측 서비스 (최종 수정 버전)
 """
 
 import pickle
-import pandas as pd
-import numpy as np
+import boto3
+import csv
 from pathlib import Path
 from typing import List, Dict, Any
+import os
+from io import StringIO
 
 class MLPredictor:
     """ML 모델 예측 클래스"""
     
     def __init__(self):
         self.model_path = Path(__file__).parent.parent.parent / 'models' / 'basic_rule_model.pkl'
-        self.data_path = Path(__file__).parent.parent.parent / 'data'
         
-        print(f"🔍 데이터 경로: {self.data_path}")
+        # 환경변수
+        self.use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
+        self.s3_bucket = os.environ.get('S3_DATA_BUCKET', 'stockplay-data-yjw-20251113')
         
-        # 모델 로드 (규칙 기반)
+        print(f"🔍 데이터 소스: {'S3' if self.use_s3 else '로컬'}")
+        
+        if self.use_s3:
+            self.s3 = boto3.client('s3', region_name='ap-northeast-2')
+        
+        # 모델 로드
         with open(self.model_path, 'rb') as f:
             self.model_config = pickle.load(f)
         
-        print(f"📦 모델 설정: {self.model_config}")
         self.z_threshold = self.model_config.get('z_threshold', 2.0)
         print(f"✅ Z-Score 임계값: {self.z_threshold}")
         
         # 데이터 로드
-        self.export_data = pd.read_csv(self.data_path / 'export_value_clean.csv')
-        self.gics_data = pd.read_csv(self.data_path / 'gics_all.csv')
-        self.price_data = pd.read_csv(self.data_path / 'price_all.csv')
-        
-        # Surprise 데이터 로드
-        surprise_files = [
-            'problem1_surprise_arima.csv',
-            'problem1_surprise_ewma.csv', 
-            'problem1_surprise_sma.csv'
-        ]
-        
-        self.surprise_data = None
-        for filename in surprise_files:
-            filepath = self.data_path / filename
-            if filepath.exists():
-                self.surprise_data = pd.read_csv(filepath)
-                print(f"✅ Surprise 데이터 로드: {filename}")
-                print(f"📊 데이터 크기: {len(self.surprise_data)} rows")
-                break
-        
-        if self.surprise_data is None:
-            print("⚠️ Surprise 데이터 없음")
-        
-        print("✅ 모델 로드 완료")
+        try:
+            if self.use_s3:
+                print("📦 S3에서 데이터 로드 시작...")
+                self.surprise_data = self._read_s3_csv('data/problem1_surprise_arima.csv')
+                self.gics_data = self._read_s3_csv('data/gics_all.csv')
+                print(f"✅ Surprise: {len(self.surprise_data)} rows")
+                print(f"✅ GICS: {len(self.gics_data)} rows")
+            else:
+                # 로컬에서는 pandas 사용
+                import pandas as pd
+                data_path = Path(__file__).parent.parent.parent / 'data'
+                surprise_df = pd.read_csv(data_path / 'problem1_surprise_arima.csv')
+                gics_df = pd.read_csv(data_path / 'gics_all.csv')
+                
+                # dict로 변환하면서 문자열 strip
+                self.surprise_data = []
+                for _, row in surprise_df.iterrows():
+                    clean_row = {k: str(v).strip() if isinstance(v, str) else v for k, v in row.items()}
+                    self.surprise_data.append(clean_row)
+                
+                self.gics_data = []
+                for _, row in gics_df.iterrows():
+                    clean_row = {k: str(v).strip() if isinstance(v, str) else v for k, v in row.items()}
+                    self.gics_data.append(clean_row)
+                
+                print(f"✅ 로컬 데이터 로드 완료")
+            
+        except Exception as e:
+            print(f"❌ 데이터 로드 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            self.surprise_data = []
+            self.gics_data = []
     
-    def prepare_features(self, symbols: List[str] = None) -> pd.DataFrame:
+    def _read_s3_csv(self, key: str) -> List[Dict]:
+        """S3에서 CSV 읽기 (완전 정규화)"""
+        try:
+            print(f"📥 S3에서 읽기: {key}")
+            obj = self.s3.get_object(Bucket=self.s3_bucket, Key=key)
+            csv_content = obj['Body'].read().decode('utf-8-sig')
+            
+            reader = csv.DictReader(StringIO(csv_content))
+            data = []
+            
+            for row in reader:
+                # 🔧 완전 정규화: 키와 값 모두 공백 제거
+                normalized_row = {}
+                for k, v in row.items():
+                    # 키: 공백 제거 + 소문자
+                    clean_key = k.strip().lower() if k else ''
+                    # 값: 공백 제거
+                    clean_value = v.strip() if isinstance(v, str) and v else v
+                    if clean_key:  # 빈 키는 제외
+                        normalized_row[clean_key] = clean_value
+                data.append(normalized_row)
+            
+            print(f"✅ {key} 로드 완료: {len(data)} rows")
+            
+            # 샘플 출력
+            if data:
+                sample = data[0]
+                print(f"📊 컬럼: {list(sample.keys())}")
+                print(f"📊 샘플 symbol: '{sample.get('symbol', 'NOT FOUND')}'")
+            
+            return data
+            
+        except Exception as e:
+            print(f"⚠️ S3 읽기 실패: {key} - {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def prepare_features(self) -> List[Dict[str, Any]]:
         """모델 입력 피처 준비"""
         
-        if self.surprise_data is None:
-            return pd.DataFrame()
+        print(f"🔍 prepare_features 시작")
+        print(f"  - Surprise 데이터: {len(self.surprise_data) if self.surprise_data else 0} rows")
+        print(f"  - GICS 데이터: {len(self.gics_data) if self.gics_data else 0} rows")
         
-        # 최신 날짜 데이터 사용
-        latest_date = self.surprise_data['date'].max()
-        latest_data = self.surprise_data[self.surprise_data['date'] == latest_date].copy()
+        if not self.surprise_data or not self.gics_data:
+            print("❌ 데이터 부족!")
+            return []
         
-        print(f"📅 최신 날짜: {latest_date}, {len(latest_data)} rows")
-        
-        # GICS 데이터 병합
-        features = latest_data.merge(
-            self.gics_data[['symbol', 'sector']],
-            on='symbol',
-            how='inner'
-        )
-        
-        print(f"🔗 GICS 병합 후: {len(features)} rows")
-        
-        # Sector를 숫자 코드로 변환
-        sector_to_code = {
-            10.0: 1010, 15.0: 1510, 20.0: 2010, 25.0: 2510,
-            30.0: 3010, 35.0: 3510, 40.0: 4010, 45.0: 4510,
-            50.0: 5010, 55.0: 5510, 60.0: 6010
-        }
-        features['gics_code'] = features['sector'].map(sector_to_code)
-        
-        # 필요한 컬럼만 선택
-        features = features[['symbol', 'surprise_z', 'gics_code']].copy()
-        features = features.dropna()
-        
-        print(f"✅ 피처 준비 완료: {len(features)} rows")
-        return features
+        try:
+            # 최신 날짜 찾기
+            dates = []
+            for row in self.surprise_data:
+                date_val = row.get('date', '')
+                if date_val and date_val not in ('', 'nan', 'None'):
+                    dates.append(str(date_val).strip())
+            
+            if not dates:
+                print("❌ 날짜 데이터 없음!")
+                return []
+            
+            latest_date = max(dates)
+            print(f"📅 최신 날짜: {latest_date}")
+            
+            # 최신 데이터 필터링
+            latest_data = []
+            for row in self.surprise_data:
+                date_val = str(row.get('date', '')).strip()
+                if date_val == latest_date:
+                    latest_data.append(row)
+            
+            print(f"📊 최신 데이터: {len(latest_data)} rows")
+            
+            # GICS 매핑 (공백 완전 제거)
+            print(f"🔧 GICS 매핑 시작...")
+            gics_map = {}
+            empty_count = 0
+            
+            for row in self.gics_data:
+                symbol = str(row.get('symbol', '')).strip()
+                if symbol and symbol not in ('', 'nan', 'None'):
+                    gics_map[symbol] = row
+                else:
+                    empty_count += 1
+            
+            print(f"✅ GICS 매핑 완료: {len(gics_map)} 종목")
+            if empty_count > 0:
+                print(f"⚠️ 빈 symbol: {empty_count}개")
+            
+            # 샘플 확인
+            if gics_map:
+                sample_symbols = list(gics_map.keys())[:3]
+                print(f"📊 GICS 샘플 symbols: {sample_symbols}")
+            
+            # Sector 코드 매핑
+            sector_to_code = {
+                '10.0': 1010, '15.0': 1510, '20.0': 2010, '25.0': 2510,
+                '30.0': 3010, '35.0': 3510, '40.0': 4010, '45.0': 4510,
+                '50.0': 5010, '55.0': 5510, '60.0': 6010
+            }
+            
+            # 피처 생성
+            features = []
+            matched_count = 0
+            unmatched_count = 0
+            
+            for row in latest_data:
+                symbol = str(row.get('symbol', '')).strip()
+                surprise_z_str = str(row.get('surprise_z', '')).strip()
+                
+                # surprise_z 검증
+                if not surprise_z_str or surprise_z_str in ('nan', '', 'None'):
+                    continue
+                
+                try:
+                    surprise_z = float(surprise_z_str)
+                except:
+                    continue
+                
+                # GICS 조회
+                if symbol in gics_map:
+                    matched_count += 1
+                    sector = str(gics_map[symbol].get('sector', '')).strip()
+                    gics_code = sector_to_code.get(sector, 4510)
+                    
+                    features.append({
+                        'symbol': symbol,
+                        'surprise_z': surprise_z,
+                        'gics_code': gics_code
+                    })
+                else:
+                    unmatched_count += 1
+            
+            print(f"✅ 피처 준비 완료: {len(features)} rows")
+            print(f"   - 매칭 성공: {matched_count}")
+            print(f"   - 매칭 실패: {unmatched_count}")
+            
+            return features
+            
+        except Exception as e:
+            print(f"❌ 피처 준비 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
-    def predict(self, features: pd.DataFrame) -> List[Dict[str, Any]]:
-        """
-        규칙 기반 예측
-        - surprise_z > threshold → BUY
-        - surprise_z < -threshold → SELL
-        - 그 외 → HOLD
-        """
-        if features.empty:
+    def predict(self, features: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """규칙 기반 예측"""
+        if not features:
             return []
         
         results = []
         
-        for idx, row in features.iterrows():
+        for row in features:
             z_score = row['surprise_z']
             
             # 규칙 기반 분류
@@ -127,7 +247,7 @@ class MLPredictor:
         """상위 N개 시그널 조회"""
         features = self.prepare_features()
         
-        if features.empty:
+        if not features:
             print("⚠️ 데이터 없음, Mock 데이터 반환")
             return self._get_mock_signals(limit)
         
@@ -157,25 +277,31 @@ class MLPredictor:
         """시그널에 추가 정보 병합"""
         symbol = signal['symbol']
         
-        # GICS 데이터에서 섹터 조회
-        gics_row = self.gics_data[self.gics_data['symbol'] == symbol]
+        # GICS 조회
+        gics_row = None
+        for row in self.gics_data:
+            if str(row.get('symbol', '')).strip() == symbol:
+                gics_row = row
+                break
         
-        if len(gics_row) > 0:
-            sector_code = gics_row.iloc[0]['sector']
+        if gics_row:
+            sector_code_str = str(gics_row.get('sector', '')).strip()
             sector_name_map = {
-                10.0: '에너지', 15.0: '소재', 20.0: '산업재', 25.0: '임의소비재',
-                30.0: '필수소비재', 35.0: '헬스케어', 40.0: '금융', 45.0: 'IT',
-                50.0: '통신서비스', 55.0: '유틸리티', 60.0: '부동산'
+                '10.0': '에너지', '15.0': '소재', '20.0': '산업재', '25.0': '임의소비재',
+                '30.0': '필수소비재', '35.0': '헬스케어', '40.0': '금융', '45.0': 'IT',
+                '50.0': '통신서비스', '55.0': '유틸리티', '60.0': '부동산'
             }
-            sector = sector_name_map.get(sector_code, 'Unknown')
+            sector = sector_name_map.get(sector_code_str, 'Unknown')
             company_name = f"{sector} 종목 {symbol}"
         else:
             company_name = f"종목 {symbol}"
             sector = 'Unknown'
         
-        # 수익률 계산 (Z-Score 기반)
+        # 수익률 계산
         z_score = signal['surprise_z']
         expected_return = min(25.0, max(5.0, z_score * 5))
+        
+        import random
         
         return {
             'id': f"signal-{symbol}",
@@ -183,8 +309,8 @@ class MLPredictor:
             'companyName': company_name,
             'sector': sector,
             'signalType': signal['decision'],
-            'yoyGrowth': round(float(np.random.uniform(15, 25)), 1),
-            'momGrowth': round(float(np.random.uniform(8, 18)), 1),
+            'yoyGrowth': round(random.uniform(15, 25), 1),
+            'momGrowth': round(random.uniform(8, 18), 1),
             'expectedReturn': round(expected_return, 1),
             'confidenceScore': round(signal['confidence'] * 100, 1)
         }

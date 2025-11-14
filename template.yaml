@@ -34,6 +34,8 @@ Resources:
             BucketName: stockplay-reports-yjw-20251113
         - DynamoDBCrudPolicy:
             TableName: stockplay-main
+        - SESCrudPolicy:
+            IdentityName: "*"
       Events:
         ApiRoot:
           Type: Api

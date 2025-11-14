@@ -304,7 +304,18 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
         fontName='NanumGothic',
         leading=14,
     )
-    
+
+    # 0. 로고 (상단 중앙)
+    logo_image_data = get_logo_image()
+    if logo_image_data:
+        try:
+            logo = Image(logo_image_data, width=2*inch, height=2*inch)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.3*inch))
+        except Exception as e:
+            print(f"로고 추가 실패: {e}")
+
     # 1. 제목
     title = Paragraph(f"<b>StockPlay 전문 투자 리포트</b>", title_style)
     story.append(title)
@@ -424,8 +435,36 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
     
     story.append(tech_table)
     story.append(Spacer(1, 0.4*inch))
-    
-    # 6. 푸터
+
+    # 6. KOSPI 기술적 분석 차트
+    story.append(Paragraph("📊 KOSPI 시장 분석 (지지선/저항선/추세선)", heading_style))
+
+    try:
+        from .chart_generator import generate_kospi_advanced_chart
+
+        kospi_chart_bytes = generate_kospi_advanced_chart(signal_data, days=60)
+        kospi_chart_img = Image(io.BytesIO(kospi_chart_bytes), width=6.5*inch, height=3.8*inch)
+        kospi_chart_img.hAlign = 'CENTER'
+        story.append(kospi_chart_img)
+        story.append(Spacer(1, 0.3*inch))
+
+        # 차트 설명
+        chart_desc = """
+        위 차트는 KOSPI 지수의 기술적 분석을 보여줍니다:<br/>
+        • <b>추세선:</b> 선형 회귀를 통한 현재 시장 추세 (상승/하락)<br/>
+        • <b>지지선 (Support):</b> 가격이 하락 시 지지를 받을 것으로 예상되는 수준<br/>
+        • <b>저항선 (Resistance):</b> 가격 상승 시 저항을 받을 것으로 예상되는 수준<br/>
+        • <b>이동평균선 (MA20, MA60):</b> 중장기 추세 파악<br/>
+        """
+        story.append(Paragraph(chart_desc, normal_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    except Exception as e:
+        print(f"⚠️ KOSPI 차트 생성 실패: {e}")
+        story.append(Paragraph("차트를 생성하는 중 오류가 발생했습니다.", normal_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    # 7. 푸터
     footer_style = ParagraphStyle(
         'Footer',
         parent=styles['Normal'],

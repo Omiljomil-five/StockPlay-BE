@@ -1,7 +1,3 @@
-"""
-PDF 리포트 생성 서비스 (AI 분석 지원, 차트는 프론트엔드에서 생성)
-"""
-
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib import colors
@@ -16,19 +12,28 @@ import os
 from typing import Dict, Any, Optional
 
 
-# 한글 폰트 등록
+# 한글 폰트 등록 (캐싱)
+_fonts_registered = False
+
 def register_korean_fonts():
-    """한글 폰트 등록"""
+    """한글 폰트 등록 (한 번만 실행)"""
+    global _fonts_registered
+
+    if _fonts_registered:
+        return True
+
     try:
         font_path = os.path.join(os.path.dirname(__file__), '../../fonts')
-        
+
         pdfmetrics.registerFont(
             TTFont('NanumGothic', os.path.join(font_path, 'NanumGothic-Regular.ttf'))
         )
         pdfmetrics.registerFont(
             TTFont('NanumGothic-Bold', os.path.join(font_path, 'NanumGothic-Bold.ttf'))
         )
-        
+
+        _fonts_registered = True
+        print("✅ 한글 폰트 등록 완료")
         return True
     except Exception as e:
         print(f"Font registration error: {e}")
@@ -107,7 +112,7 @@ def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
     }.get(signal_data.get('signalType', 'BUY'), '매수')
     
     info_data = [
-        ['종목', signal_data.get('symbol', 'N/A')],
+        ['종목', f"{signal_data.get('companyName', 'N/A')} ({signal_data.get('symbol', 'N/A')})"],
         ['업종', signal_data.get('sector', 'N/A')],
         ['시그널', signal_type_kr],
         ['예측 기간', signal_data.get('period', '1d')],
@@ -262,18 +267,22 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
         'SELL': '매도 (주의)'
     }.get(signal_data.get('signalType', 'BUY'), '매수')
     
+    company_name = signal_data.get('companyName', 'N/A')
+    symbol = signal_data.get('symbol', 'N/A')
+
     overview_text = f"""
-    <b>종목:</b> {signal_data.get('symbol', 'N/A')} ({signal_data.get('sector', 'N/A')})<br/>
+    <b>종목:</b> {company_name} ({symbol})<br/>
+    <b>업종:</b> {signal_data.get('sector', 'N/A')}<br/>
     <b>투자의견:</b> {signal_type_kr}<br/>
     <b>예측기간:</b> {signal_data.get('period', '1d')}<br/>
     <br/>
     """
-    
+
     if ai_analysis and 'overview' in ai_analysis:
         overview_text += ai_analysis['overview']
     else:
         overview_text += f"""
-        {signal_data.get('symbol')}은(는) {signal_data.get('sector')} 섹터의 종목으로,
+        {company_name}({symbol})은(는) {signal_data.get('sector')} 섹터의 종목으로,
         최근 Surprise 지표가 {signal_data.get('surpriseZ', 0):.2f}를 기록하며
         {'긍정적인' if signal_data.get('surpriseZ', 0) > 0 else '부정적인'} 신호를 보이고 있습니다.
         """
@@ -526,4 +535,37 @@ def upload_to_s3(pdf_bytes: bytes, filename: str, bucket_name: str = 'stockplay-
         
     except ClientError as e:
         print(f"S3 upload error: {e}")
+        raise
+
+
+def get_s3_presigned_url(bucket_name: str, key: str, expiration: int = 3600) -> str:
+    """S3 파일에 대한 presigned URL 생성
+
+    Args:
+        bucket_name: S3 버킷 이름
+        key: S3 객체 키
+        expiration: URL 만료 시간(초, 기본 1시간)
+
+    Returns:
+        presigned URL
+    """
+    import boto3
+    from botocore.exceptions import ClientError
+
+    try:
+        s3 = boto3.client('s3')
+
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': bucket_name,
+                'Key': key
+            },
+            ExpiresIn=expiration
+        )
+
+        return url
+
+    except ClientError as e:
+        print(f"Presigned URL generation error: {e}")
         raise

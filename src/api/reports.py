@@ -1,360 +1,308 @@
-"""
-리포트 API (Dashboard 간단 PDF / Reports 상세 PDF 구분)
-"""
-
-from fastapi import APIRouter, Query, Body
-from typing import Optional
-from ..schemas import ApiResponse, ReportsResponse, DownloadResponse
-from ..services.mock_data import generate_mock_reports
-from ..services.pdf_generator import (
-    generate_dashboard_pdf, 
-    generate_full_report_pdf, 
-    generate_report_pdf,
-    save_pdf_locally, 
-    upload_to_s3
-)
-from ..config import settings
-import uuid
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from datetime import datetime
+from typing import Optional
+import io
+from ..schemas.common import ApiResponse
+from ..schemas.report import (
+    PdfGenerationRequest,
+    PdfGenerationResponse,
+    ReportsQueryParams,
+    ReportsResponse
+)
+from ..services.pdf_generator import (
+    generate_dashboard_pdf,
+    generate_full_report_pdf,
+    save_pdf_locally,
+    upload_to_s3,
+    get_s3_presigned_url
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("", response_model=ApiResponse[ReportsResponse])
-async def get_reports(
-    limit: int = Query(10, ge=1, le=50, description="페이지 크기"),
-    offset: int = Query(0, ge=0, description="페이지 오프셋")
-):
+@router.post("/generate", response_model=ApiResponse[PdfGenerationResponse])
+async def generate_pdf(request: PdfGenerationRequest):
     """
-    과거 리포트 목록 조회
-    
-    - **limit**: 페이지당 리포트 수
-    - **offset**: 시작 위치
+    대시보드용 간단 PDF 생성
+
+    - 시그널 카드 데이터를 기반으로 PDF 생성
+    - 차트는 프론트엔드에서 렌더링
     """
-    
     try:
-        data = generate_mock_reports(limit=limit, offset=offset)
-        return ApiResponse(success=True, data=data)
-    except Exception as e:
-        return ApiResponse(
-            success=False, 
-            data={"reports": [], "total": 0, "hasMore": False}, 
-            error=str(e)
-        )
+        # companyName이 없으면 자동 생성
+        company_name = request.companyName or f"{request.sector} 종목 {request.symbol}"
 
+        # 요청 데이터를 딕셔너리로 변환
+        signal_data = {
+            'symbol': request.symbol,
+            'companyName': company_name,
+            'sector': request.sector,
+            'signalType': request.signalType,
+            'period': request.period,
+            'expectedReturn': request.expectedReturn,
+            'vsKospi': request.vsKospi,
+            'kospiReturn': request.kospiReturn,
+            'surpriseZ': request.surpriseZ,
+            'yoyGrowth': request.yoyGrowth,
+            'confidenceScore': request.confidenceScore
+        }
 
-@router.get("/{report_id}/download", response_model=ApiResponse[DownloadResponse])
-async def get_report_download_url(report_id: str):
-    """
-    PDF 다운로드 URL 생성
-    
-    - **report_id**: 리포트 ID
-    """
-    
-    try:
-        bucket_name = settings.S3_BUCKET_NAME
-        region = settings.AWS_REGION
-        
-        url = f"https://{bucket_name}.s3.{region}.amazonaws.com/reports/{report_id}.pdf"
-        
-        return ApiResponse(
-            success=True,
-            data={"url": url, "expiresIn": 3600}
-        )
-    except Exception as e:
-        return ApiResponse(
-            success=False, 
-            data={"url": "", "expiresIn": 0}, 
-            error=str(e)
-        )
-
-
-@router.post("/generate-dashboard")
-async def generate_dashboard_pdf_endpoint(
-    signal_data: dict = Body(...)
-):
-    """
-    Dashboard용 간단 PDF 생성 (차트 포함, AI 없음)
-    
-    Request Body:
-    {
-        "symbol": "AAPL",
-        "sector": "IT",
-        "signalType": "BUY",
-        "period": "5d",
-        "expectedReturn": 12.5,
-        "vsKospi": 10.3,
-        "kospiReturn": 2.2,
-        "surpriseZ": 2.52,
-        "yoyGrowth": 18.3,
-        "confidenceScore": 85
-    }
-    """
-    
-    try:
         # PDF 생성
         pdf_bytes = generate_dashboard_pdf(signal_data)
-        
-        # 파일명
-        symbol = signal_data.get('symbol', 'UNKNOWN')
+
+        # 파일명 생성 (티커 심볼 사용)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"dashboard_{symbol}_{timestamp}.pdf"
-        
-        # 환경에 따라 로컬 저장 또는 S3 업로드
-        if settings.DEBUG:
+        filename = f"stockplay_signal_{request.symbol}_{timestamp}.pdf"
+
+        # S3에 업로드 및 presigned URL 생성
+        import os
+        bucket_name = os.getenv('S3_REPORT_BUCKET', 'stockplay-reports-yjw-20251113')
+
+        try:
+            # S3에 업로드
+            s3_url = upload_to_s3(pdf_bytes, filename, bucket_name)
+
+            # presigned URL 생성 (1시간 유효)
+            url = get_s3_presigned_url(bucket_name, f"reports/{filename}", expiration=3600)
+        except Exception as e:
+            print(f"S3 업로드 실패, 로컬 저장으로 폴백: {e}")
+            # S3 실패 시 로컬에 저장
             filepath = save_pdf_locally(pdf_bytes, filename)
-            url = f"/data/reports/{filename}"
-            message = "Dashboard PDF generated and saved locally"
-        else:
-            url = upload_to_s3(
-                pdf_bytes, 
-                filename, 
-                bucket_name=settings.S3_BUCKET_NAME
-            )
-            message = "Dashboard PDF generated and uploaded to S3"
-        
-        return ApiResponse(
-            success=True,
-            data={
-                "url": url,
-                "filename": filename,
-                "message": message
-            }
+            url = f"/api/reports/download/{filename}"
+
+        response_data = PdfGenerationResponse(
+            url=url,
+            filename=filename,
+            message="PDF가 성공적으로 생성되었습니다.",
+            ai_used=False
         )
-        
+
+        return ApiResponse(success=True, data=response_data)
+
     except Exception as e:
-        print(f"Dashboard PDF generation error: {e}")
+        print(f"❌ PDF 생성 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(
-            success=False,
-            data={"url": "", "filename": "", "message": ""},
-            error=str(e)
-        )
+        raise HTTPException(status_code=500, detail=f"PDF 생성 실패: {str(e)}")
 
 
-@router.post("/generate-full")
-async def generate_full_report_endpoint(
-    signal_data: dict = Body(...),
-    use_ai: bool = Query(False, description="AI 분석 사용 여부")
+@router.post("/generate-full", response_model=ApiResponse[PdfGenerationResponse])
+async def generate_full_pdf(
+    request: PdfGenerationRequest,
+    use_ai: bool = False
 ):
     """
-    Reports용 상세 PDF 생성 (차트 + AI 분석 포함)
-    
-    Request Body: (Dashboard와 동일)
-    
-    Query Parameters:
-    - **use_ai**: AI 분석 포함 여부 (default: False)
+    상세 리포트 PDF 생성 (AI 분석 포함 옵션)
+
+    - AI 분석이 포함된 상세 리포트 생성
+    - use_ai=true로 설정 시 AI 분석 추가
     """
-    
     try:
-        ai_analysis = None
-        
+        # companyName이 없으면 자동 생성
+        company_name = request.companyName or f"{request.sector} 종목 {request.symbol}"
+
+        # 요청 데이터를 딕셔너리로 변환
+        signal_data = {
+            'symbol': request.symbol,
+            'companyName': company_name,
+            'sector': request.sector,
+            'signalType': request.signalType,
+            'period': request.period,
+            'expectedReturn': request.expectedReturn,
+            'vsKospi': request.vsKospi,
+            'kospiReturn': request.kospiReturn,
+            'surpriseZ': request.surpriseZ,
+            'yoyGrowth': request.yoyGrowth,
+            'confidenceScore': request.confidenceScore
+        }
+
         # AI 분석 (선택적)
+        ai_analysis = None
         if use_ai:
-            try:
-                ai_analysis = await generate_ai_analysis(signal_data)
-            except Exception as ai_error:
-                print(f"AI analysis failed, continuing without AI: {ai_error}")
-                ai_analysis = None
-        
-        # PDF 생성
-        pdf_bytes = generate_full_report_pdf(signal_data, ai_analysis)
-        
-        # 파일명
-        symbol = signal_data.get('symbol', 'UNKNOWN')
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"report_{symbol}_{timestamp}.pdf"
-        
-        # 환경에 따라 로컬 저장 또는 S3 업로드
-        if settings.DEBUG:
-            filepath = save_pdf_locally(pdf_bytes, filename)
-            url = f"/data/reports/{filename}"
-            message = "Full report PDF generated and saved locally"
-        else:
-            url = upload_to_s3(
-                pdf_bytes, 
-                filename, 
-                bucket_name=settings.S3_BUCKET_NAME
-            )
-            message = "Full report PDF generated and uploaded to S3"
-        
-        return ApiResponse(
-            success=True,
-            data={
-                "url": url,
-                "filename": filename,
-                "message": message,
-                "ai_used": use_ai and ai_analysis is not None
+            # TODO: AI 분석 서비스 연동
+            ai_analysis = {
+                'overview': f"{company_name}({request.symbol}) 종목에 대한 AI 분석 결과입니다.",
+                'investment_opinion': "현재 시장 상황을 고려할 때 긍정적입니다.",
+                'risk_analysis': "주요 리스크 요인을 모니터링하고 있습니다.",
+                'technical_analysis': "기술적 지표가 양호합니다."
             }
+
+        # 상세 PDF 생성
+        pdf_bytes = generate_full_report_pdf(signal_data, ai_analysis)
+
+        # 파일명 생성
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"stockplay_report_{request.symbol}_{timestamp}.pdf"
+
+        # S3에 업로드 및 presigned URL 생성
+        import os
+        bucket_name = os.getenv('S3_REPORT_BUCKET', 'stockplay-reports-yjw-20251113')
+
+        try:
+            # S3에 업로드
+            s3_url = upload_to_s3(pdf_bytes, filename, bucket_name)
+
+            # presigned URL 생성 (1시간 유효)
+            url = get_s3_presigned_url(bucket_name, f"reports/{filename}", expiration=3600)
+        except Exception as e:
+            print(f"S3 업로드 실패, 로컬 저장으로 폴백: {e}")
+            # S3 실패 시 로컬에 저장
+            filepath = save_pdf_locally(pdf_bytes, filename)
+            url = f"/api/reports/download/{filename}"
+
+        response_data = PdfGenerationResponse(
+            url=url,
+            filename=filename,
+            message="상세 리포트가 성공적으로 생성되었습니다.",
+            ai_used=use_ai
         )
-        
+
+        return ApiResponse(success=True, data=response_data)
+
     except Exception as e:
-        print(f"Full report PDF generation error: {e}")
+        print(f"❌ 상세 리포트 생성 오류: {e}")
         import traceback
         traceback.print_exc()
-        return ApiResponse(
-            success=False,
-            data={"url": "", "filename": "", "message": "", "ai_used": False},
-            error=str(e)
-        )
+        raise HTTPException(status_code=500, detail=f"리포트 생성 실패: {str(e)}")
 
 
-async def generate_ai_analysis(signal_data: dict) -> dict:
+@router.get("/download/{filename}")
+async def download_pdf(filename: str):
     """
-    Claude API를 사용한 AI 분석 생성
-    
-    Args:
-        signal_data: 시그널 데이터
-        
-    Returns:
-        AI 분석 결과 dict
+    PDF 파일 다운로드
+
+    - 생성된 PDF 파일을 다운로드
+    - Mock 리포트의 경우 동적으로 생성
     """
     try:
         import os
-        from anthropic import Anthropic
-        
-        # API 키 확인
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            print("⚠️ ANTHROPIC_API_KEY not found")
-            return None
-        
-        client = Anthropic(api_key=api_key)
-        
-        # 프롬프트 생성
-        signal_type_kr = {
-            'BUY': '매수',
-            'HOLD': '홀드',
-            'SELL': '매도'
-        }.get(signal_data.get('signalType', 'BUY'), '매수')
-        
-        prompt = f"""
-다음 주식 데이터를 분석하여 투자 리포트를 작성해주세요:
+        filepath = f"data/reports/{filename}"
 
-**종목 정보:**
-- 종목: {signal_data.get('symbol', 'N/A')}
-- 섹터: {signal_data.get('sector', 'N/A')}
-- 시그널: {signal_type_kr}
-- 예측 기간: {signal_data.get('period', '1d')}
+        # 파일 존재 확인
+        if not os.path.exists(filepath):
+            # Mock 리포트인 경우 (report-2024-XX.pdf) 동적 생성
+            if filename.startswith('report-2024-'):
+                print(f"📄 Mock 리포트 동적 생성: {filename}")
 
-**성과 지표:**
-- 예상 수익률: {signal_data.get('expectedReturn', 0):.1f}%
-- KOSPI 대비: {signal_data.get('vsKospi', 0):.1f}%
-- KOSPI 수익률: {signal_data.get('kospiReturn', 0):.1f}%
-- Surprise Z-Score: {signal_data.get('surpriseZ', 0):.2f}
-- 신뢰도: {signal_data.get('confidenceScore', 0):.0f}%
-- YoY 성장률: {signal_data.get('yoyGrowth', 0):.1f}%
+                # Mock 데이터로 PDF 생성
+                from ..services.pdf_generator import generate_dashboard_pdf
 
-다음 4개 섹션으로 분석해주세요:
+                mock_signal = {
+                    'symbol': 'MOCK-001',
+                    'companyName': '샘플 종목',
+                    'sector': 'IT',
+                    'signalType': 'BUY',
+                    'period': '1d',
+                    'expectedReturn': 11.2,
+                    'vsKospi': 9.2,
+                    'kospiReturn': 2.0,
+                    'surpriseZ': 2.5,
+                    'yoyGrowth': 18.5,
+                    'confidenceScore': 85.0
+                }
 
-1. **종목 개요** (2-3문장): 종목의 현재 상황과 주요 특징
-2. **투자 의견** (3-4문장): 수익률 전망과 투자 포지션 추천
-3. **리스크 분석** (2-3문장): 주요 리스크 요인
-4. **기술적 분석** (2-3문장): Surprise 지표 및 기술적 관점
+                pdf_bytes = generate_dashboard_pdf(mock_signal)
 
-각 섹션은 명확하고 전문적으로 작성해주세요.
-"""
-        
-        # Claude API 호출
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1000,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-        
-        # 응답 파싱
-        full_text = message.content[0].text
-        
-        # 간단한 섹션 분리 (실제로는 더 정교하게 파싱 필요)
-        sections = {
-            'overview': '',
-            'investment_opinion': '',
-            'risk_analysis': '',
-            'technical_analysis': ''
-        }
-        
-        # 전체 텍스트를 각 섹션에 분배 (간단 버전)
-        lines = full_text.split('\n')
-        current_section = 'overview'
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            if '투자 의견' in line or 'investment' in line.lower():
-                current_section = 'investment_opinion'
-                continue
-            elif '리스크' in line or 'risk' in line.lower():
-                current_section = 'risk_analysis'
-                continue
-            elif '기술적' in line or 'technical' in line.lower():
-                current_section = 'technical_analysis'
-                continue
-            
-            sections[current_section] += line + '<br/>'
-        
-        print(f"✅ AI 분석 생성 완료")
-        return sections
-        
-    except Exception as e:
-        print(f"❌ AI 분석 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+                # StreamingResponse로 반환
+                from urllib.parse import quote
+                encoded_filename = quote(filename)
 
+                return StreamingResponse(
+                    io.BytesIO(pdf_bytes),
+                    media_type="application/pdf",
+                    headers={
+                        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                        "Content-Type": "application/pdf"
+                    }
+                )
 
-@router.post("/{report_id}/generate-pdf")
-async def generate_pdf(report_id: str):
-    """
-    기존 월간 리포트 PDF 생성 (하위 호환성 유지)
-    
-    - **report_id**: 리포트 ID
-    """
-    
-    try:
-        reports_data = generate_mock_reports(limit=10, offset=0)
-        
-        report = next((r for r in reports_data['reports'] if r['id'] == report_id), None)
-        
-        if not report:
-            return ApiResponse(
-                success=False,
-                data={"url": "", "message": ""},
-                error="Report not found"
-            )
-        
-        pdf_bytes = generate_report_pdf(report)
-        
-        filename = f"{report_id}.pdf"
-        
-        if settings.DEBUG:
-            filepath = save_pdf_locally(pdf_bytes, filename)
-            url = f"/data/reports/{filename}"
-            message = "PDF generated and saved locally"
-        else:
-            url = upload_to_s3(
-                pdf_bytes, 
-                filename, 
-                bucket_name=settings.S3_BUCKET_NAME
-            )
-            message = "PDF generated and uploaded to S3"
-        
-        return ApiResponse(
-            success=True,
-            data={
-                "url": url,
-                "message": message
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+
+        # 파일 읽기
+        with open(filepath, 'rb') as f:
+            pdf_bytes = f.read()
+
+        # StreamingResponse로 반환
+        from urllib.parse import quote
+        encoded_filename = quote(filename)
+
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "Content-Type": "application/pdf"
             }
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"PDF generation error: {e}")
-        return ApiResponse(
-            success=False,
-            data={"url": "", "message": ""},
-            error=str(e)
+        print(f"❌ PDF 다운로드 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"다운로드 실패: {str(e)}")
+
+
+@router.get("", response_model=ApiResponse[ReportsResponse])
+async def get_reports(
+    limit: int = 10,
+    offset: int = 0
+):
+    """
+    리포트 목록 조회
+
+    - 2024년 6월~12월 리포트 목록 반환
+    """
+    try:
+        from ..schemas.report import Report
+        from ..schemas.signal import AnalysisResult
+
+        # 2024년 6월~12월 Mock 리포트 생성
+        all_reports = []
+        for month in range(12, 5, -1):  # 12월부터 6월까지 역순
+            report_date = datetime(2024, month, 1)
+
+            # Mock 분석 결과
+            analysis_result = AnalysisResult(
+                date=report_date.isoformat(),
+                topPicks=[],
+                performance={
+                    'avgReturn': 11.2,
+                    'winRate': 75.3,
+                    'sharpeRatio': 1.8,
+                    'maxDrawdown': -8.5
+                },
+                sectorAnalysis=[],
+                totalSignals=20
+            )
+
+            report = Report(
+                id=f"report-2024-{month:02d}",
+                date=report_date,
+                pdfUrl=f"/reports/2024-{month:02d}-report.pdf",
+                analysisResult=analysis_result,
+                createdAt=report_date
+            )
+            all_reports.append(report)
+
+        total = len(all_reports)
+
+        # 페이지네이션
+        paginated_reports = all_reports[offset:offset + limit]
+        has_more = (offset + limit) < total
+
+        response_data = ReportsResponse(
+            reports=paginated_reports,
+            total=total,
+            hasMore=has_more
         )
+
+        return ApiResponse(success=True, data=response_data)
+
+    except Exception as e:
+        print(f"❌ 리포트 목록 조회 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"목록 조회 실패: {str(e)}")

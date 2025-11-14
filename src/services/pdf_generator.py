@@ -2,7 +2,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 
 # 한글 폰트 등록 (캐싱)
 _fonts_registered = False
+_logo_bytes = None
 
 def register_korean_fonts():
     """한글 폰트 등록 (한 번만 실행)"""
@@ -38,6 +39,49 @@ def register_korean_fonts():
     except Exception as e:
         print(f"Font registration error: {e}")
         return False
+
+
+def get_logo_image():
+    """S3에서 로고 이미지 가져오기 (캐싱)"""
+    global _logo_bytes
+
+    if _logo_bytes:
+        return io.BytesIO(_logo_bytes)
+
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+
+        use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
+
+        if use_s3:
+            # S3에서 로고 가져오기
+            s3_bucket = os.getenv('S3_DATA_BUCKET', 'stockplay-data-yjw-20251113')
+            s3 = boto3.client('s3')
+
+            try:
+                response = s3.get_object(Bucket=s3_bucket, Key='assets/StockPlay.png')
+                _logo_bytes = response['Body'].read()
+                print("✅ S3에서 로고 로드 완료")
+                return io.BytesIO(_logo_bytes)
+            except ClientError as e:
+                print(f"S3 로고 로드 실패: {e}")
+                return None
+        else:
+            # 로컬에서 로고 가져오기 (개발 환경)
+            logo_path = os.path.join(os.path.dirname(__file__), '../../assets/StockPlay.png')
+            if os.path.exists(logo_path):
+                with open(logo_path, 'rb') as f:
+                    _logo_bytes = f.read()
+                print("✅ 로컬에서 로고 로드 완료")
+                return io.BytesIO(_logo_bytes)
+            else:
+                print("⚠️ 로고 파일을 찾을 수 없습니다")
+                return None
+
+    except Exception as e:
+        print(f"로고 로드 오류: {e}")
+        return None
 
 
 def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
@@ -93,7 +137,18 @@ def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
         textColor=colors.HexColor('#1a1f3a'),
         fontName='NanumGothic',
     )
-    
+
+    # 0. 로고 (상단 중앙)
+    logo_image_data = get_logo_image()
+    if logo_image_data:
+        try:
+            logo = Image(logo_image_data, width=1.5*inch, height=1.5*inch)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            print(f"로고 추가 실패: {e}")
+
     # 1. 제목
     title = Paragraph(f"<b>StockPlay 시그널 카드</b>", title_style)
     story.append(title)

@@ -167,10 +167,77 @@ async def generate_full_pdf(
         raise HTTPException(status_code=500, detail=f"리포트 생성 실패: {str(e)}")
 
 
+@router.get("/{report_id}/download")
+async def get_report_download_url(report_id: str):
+    """
+    리포트 다운로드 URL 조회 (Reports 페이지용)
+
+    - report-2024-XX 형식의 리포트 ID를 받아 presigned URL 생성
+    - Mock 리포트의 경우 동적으로 PDF 생성하고 S3 업로드
+    """
+    try:
+        import os
+        bucket_name = os.getenv('S3_REPORT_BUCKET', 'stockplay-reports-yjw-20251113')
+
+        # Mock 리포트인 경우 (report-2024-XX)
+        if report_id.startswith('report-2024-'):
+            print(f"📄 Mock 리포트 다운로드 URL 생성: {report_id}")
+
+            # Mock 데이터로 PDF 생성
+            from ..services.pdf_generator import generate_dashboard_pdf
+
+            mock_signal = {
+                'symbol': 'MOCK-001',
+                'companyName': '샘플 종목',
+                'sector': 'IT',
+                'signalType': 'BUY',
+                'period': '1d',
+                'expectedReturn': 11.2,
+                'vsKospi': 9.2,
+                'kospiReturn': 2.0,
+                'surpriseZ': 2.5,
+                'yoyGrowth': 18.5,
+                'confidenceScore': 85.0
+            }
+
+            pdf_bytes = generate_dashboard_pdf(mock_signal)
+            filename = f"{report_id}.pdf"
+
+            # S3에 업로드
+            try:
+                s3_url = upload_to_s3(pdf_bytes, filename, bucket_name)
+                # presigned URL 생성 (1시간 유효)
+                url = get_s3_presigned_url(bucket_name, f"reports/{filename}", expiration=3600)
+            except Exception as e:
+                print(f"S3 업로드 실패, 로컬 저장으로 폴백: {e}")
+                # S3 실패 시 로컬에 저장
+                filepath = save_pdf_locally(pdf_bytes, filename)
+                url = f"/api/reports/download/{filename}"
+
+            return {
+                "success": True,
+                "data": {
+                    "url": url,
+                    "expiresIn": 3600
+                }
+            }
+
+        # 실제 파일이 있는 경우
+        raise HTTPException(status_code=404, detail="리포트를 찾을 수 없습니다.")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 리포트 URL 조회 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"URL 조회 실패: {str(e)}")
+
+
 @router.get("/download/{filename}")
 async def download_pdf(filename: str):
     """
-    PDF 파일 다운로드
+    PDF 파일 다운로드 (로컬 폴백용)
 
     - 생성된 PDF 파일을 다운로드
     - Mock 리포트의 경우 동적으로 생성

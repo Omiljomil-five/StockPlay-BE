@@ -10,26 +10,55 @@ router = APIRouter(prefix="/subscribe", tags=["subscribe"])
 async def subscribe(request: SubscribeRequest):
     """
     이메일 구독 등록
-    
+
     - **email**: 구독할 이메일 주소
+    - 신규 구독 시 환영 이메일 전송
+    - 이미 구독 중인 경우 안내 메시지 반환
     """
     try:
         db_service = get_dynamodb_service()
         result = db_service.subscribe(request.email)
-        
+
         if result['success']:
+            # 신규 구독 성공 - 환영 이메일 전송
             data = result['data']
+
+            # 환영 이메일 전송 (비동기로 실패해도 구독은 성공)
+            try:
+                from ..services.email_service import get_email_service
+                email_service = get_email_service()
+                email_service.send_welcome_email(request.email)
+            except Exception as email_error:
+                print(f"⚠️ 환영 이메일 전송 실패 (구독은 성공): {email_error}")
+
             response_data = SubscriptionResponse(
                 email=data['email'],
                 notification_enabled=bool(data['notification_enabled']),
                 created_at=data['created_at'],
-                updated_at=data['updated_at']
+                updated_at=data['updated_at'],
+                is_new_subscriber=True,
+                message="구독이 완료되었습니다! 환영 이메일을 확인해주세요."
             )
             return ApiResponse(success=True, data=response_data)
         else:
-            # ✅ 수정: HTTPException 사용
+            # 이미 구독 중인 경우 - 에러가 아닌 성공으로 처리하되 메시지 다르게
+            if "이미 구독" in result['message']:
+                # 기존 구독 정보 조회
+                existing = db_service.get_subscription(request.email)
+                if existing:
+                    response_data = SubscriptionResponse(
+                        email=existing['email'],
+                        notification_enabled=bool(existing['notification_enabled']),
+                        created_at=existing['created_at'],
+                        updated_at=existing['updated_at'],
+                        is_new_subscriber=False,
+                        message="이미 구독 중인 이메일입니다. 매일 오전 9시에 리포트를 받고 계십니다."
+                    )
+                    return ApiResponse(success=True, data=response_data)
+
+            # 그 외 에러
             raise HTTPException(status_code=400, detail=result['message'])
-            
+
     except HTTPException:
         raise
     except Exception as e:

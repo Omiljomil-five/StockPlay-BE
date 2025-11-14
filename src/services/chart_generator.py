@@ -5,12 +5,107 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 import io
 import base64
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import numpy as np
+import os
+import csv
+from io import StringIO
 
 # 한글 폰트 설정
 plt.rcParams['font.family'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False
+
+
+def load_kospi_data(days: int = 60) -> tuple:
+    """KOSPI 데이터 로드 (S3 또는 로컬)"""
+    try:
+        use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
+
+        if use_s3:
+            import boto3
+            s3_bucket = os.getenv('S3_DATA_BUCKET', 'stockplay-data-yjw-20251113')
+            s3 = boto3.client('s3')
+
+            obj = s3.get_object(Bucket=s3_bucket, Key='data/kospi.csv')
+            csv_content = obj['Body'].read().decode('utf-8-sig')
+
+            reader = csv.DictReader(StringIO(csv_content))
+            data = []
+            for row in reader:
+                data.append({
+                    'date': row.get('date', '').strip(),
+                    'close': float(row.get('close', 0)),
+                    'high': float(row.get('high', 0)),
+                    'low': float(row.get('low', 0)),
+                    'open': float(row.get('open', 0))
+                })
+        else:
+            # 로컬
+            from pathlib import Path
+            data_path = Path(__file__).parent.parent.parent / 'data' / 'kospi.csv'
+
+            with open(data_path, 'r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f)
+                data = []
+                for row in reader:
+                    data.append({
+                        'date': row.get('date', '').strip(),
+                        'close': float(row.get('close', 0)),
+                        'high': float(row.get('high', 0)),
+                        'low': float(row.get('low', 0)),
+                        'open': float(row.get('open', 0))
+                    })
+
+        # 최근 N일 데이터만 사용
+        data = sorted(data, key=lambda x: x['date'])[-days:]
+
+        dates = [datetime.strptime(d['date'], '%Y-%m-%d') for d in data]
+        closes = [d['close'] for d in data]
+        highs = [d['high'] for d in data]
+        lows = [d['low'] for d in data]
+
+        print(f"✅ KOSPI 데이터 로드 완료: {len(dates)}일")
+        return dates, closes, highs, lows
+
+    except Exception as e:
+        print(f"⚠️ KOSPI 데이터 로드 실패: {e}")
+        # Fallback: Mock 데이터
+        dates = [datetime.now() - timedelta(days=i) for i in range(days, 0, -1)]
+        base = 2500
+        closes = base + np.cumsum(np.random.randn(days) * 10)
+        highs = closes + np.random.rand(days) * 20
+        lows = closes - np.random.rand(days) * 20
+        return dates, closes.tolist(), highs.tolist(), lows.tolist()
+
+
+def calculate_support_resistance(prices: List[float], window: int = 5) -> tuple:
+    """지지선과 저항선 계산"""
+    highs = []
+    lows = []
+
+    for i in range(window, len(prices) - window):
+        # 고점: 양옆보다 높으면
+        if all(prices[i] >= prices[i-j] for j in range(1, window+1)) and \
+           all(prices[i] >= prices[i+j] for j in range(1, window+1)):
+            highs.append(prices[i])
+
+        # 저점: 양옆보다 낮으면
+        if all(prices[i] <= prices[i-j] for j in range(1, window+1)) and \
+           all(prices[i] <= prices[i+j] for j in range(1, window+1)):
+            lows.append(prices[i])
+
+    resistance = np.mean(highs) if highs else max(prices)
+    support = np.mean(lows) if lows else min(prices)
+
+    return support, resistance
+
+
+def calculate_trendline(dates: List[datetime], prices: List[float]) -> tuple:
+    """추세선 계산 (선형 회귀)"""
+    x = np.arange(len(prices))
+    coeffs = np.polyfit(x, prices, 1)  # 1차 다항식 (직선)
+    trendline = np.polyval(coeffs, x)
+    return trendline, coeffs[0]  # trendline, slope
 
 
 def generate_surprise_chart(signal_data: Dict[str, Any], history_days: int = 30) -> bytes:
@@ -156,16 +251,16 @@ def generate_price_chart(signal_data: Dict[str, Any], days: int = 60) -> bytes:
 def generate_kospi_comparison_chart(signal_data: Dict[str, Any]) -> bytes:
     """
     KOSPI 대비 차트 생성
-    
+
     Args:
         signal_data: 시그널 데이터
-        
+
     Returns:
         PNG 이미지 바이트
     """
     fig, ax = plt.subplots(figsize=(8, 5), facecolor='#1a1f3a')
     ax.set_facecolor('#0a0e27')
-    
+
     # 데이터
     categories = ['Expected\nReturn', 'KOSPI\nReturn', 'vs KOSPI']
     values = [
@@ -174,10 +269,10 @@ def generate_kospi_comparison_chart(signal_data: Dict[str, Any]) -> bytes:
         signal_data.get('vsKospi', 0)
     ]
     colors_list = ['#10b981' if v >= 0 else '#ef4444' for v in values]
-    
+
     # 막대 차트
     bars = ax.bar(categories, values, color=colors_list, alpha=0.8, width=0.6)
-    
+
     # 값 표시
     for bar, value in zip(bars, values):
         height = bar.get_height()
@@ -185,13 +280,13 @@ def generate_kospi_comparison_chart(signal_data: Dict[str, Any]) -> bytes:
                 f'{value:+.1f}%',
                 ha='center', va='bottom' if height >= 0 else 'top',
                 color='#e5e7eb', fontsize=11, fontweight='bold')
-    
+
     # 0선
     ax.axhline(y=0, color='#9aa0a6', linestyle='-', linewidth=1)
-    
+
     # 스타일링
     ax.set_ylabel('Return (%)', color='#9aa0a6', fontsize=11)
-    ax.set_title(f'{signal_data.get("symbol", "SYMBOL")} - Performance vs KOSPI', 
+    ax.set_title(f'{signal_data.get("symbol", "SYMBOL")} - Performance vs KOSPI',
                  color='#e5e7eb', fontsize=12, fontweight='bold')
     ax.tick_params(colors='#9aa0a6', labelsize=10)
     ax.spines['top'].set_visible(False)
@@ -199,13 +294,106 @@ def generate_kospi_comparison_chart(signal_data: Dict[str, Any]) -> bytes:
     ax.spines['left'].set_color('#2a2f4a')
     ax.spines['bottom'].set_color('#2a2f4a')
     ax.grid(True, alpha=0.1, color='#9aa0a6', axis='y')
-    
+
     plt.tight_layout()
-    
+
     # 이미지로 저장
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a')
     buf.seek(0)
     plt.close()
-    
+
+    return buf.getvalue()
+
+
+def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -> bytes:
+    """
+    KOSPI 고급 차트 생성 (추세선, 지지/저항선 포함)
+
+    Args:
+        signal_data: 시그널 데이터
+        days: 표시 일수
+
+    Returns:
+        PNG 이미지 바이트
+    """
+    fig, ax = plt.subplots(figsize=(12, 7), facecolor='#1a1f3a')
+    ax.set_facecolor('#0a0e27')
+
+    # KOSPI 데이터 로드
+    dates, closes, highs, lows = load_kospi_data(days)
+
+    # 추세선 계산
+    trendline, slope = calculate_trendline(dates, closes)
+
+    # 지지선/저항선 계산
+    support, resistance = calculate_support_resistance(closes)
+
+    # KOSPI 가격 차트
+    ax.plot(dates, closes, color='#4c6fff', linewidth=2.5, label='KOSPI', zorder=3)
+
+    # 추세선
+    trend_color = '#10b981' if slope > 0 else '#ef4444'
+    ax.plot(dates, trendline, color=trend_color, linewidth=2, linestyle='--',
+            label=f'Trend ({"상승" if slope > 0 else "하락"})', alpha=0.8, zorder=2)
+
+    # 지지선
+    ax.axhline(y=support, color='#10b981', linestyle=':', linewidth=2,
+               label=f'Support {support:.0f}', alpha=0.7)
+    ax.fill_between(dates, support - 20, support + 20,
+                     color='#10b981', alpha=0.1)
+
+    # 저항선
+    ax.axhline(y=resistance, color='#ef4444', linestyle=':', linewidth=2,
+               label=f'Resistance {resistance:.0f}', alpha=0.7)
+    ax.fill_between(dates, resistance - 20, resistance + 20,
+                     color='#ef4444', alpha=0.1)
+
+    # 현재 위치 강조
+    ax.scatter(dates[-1], closes[-1], color='#f59e0b', s=200,
+               zorder=5, edgecolors='#fff', linewidth=2, label='Current')
+    ax.text(dates[-1], closes[-1] + 30, f'{closes[-1]:.0f}',
+            ha='center', va='bottom', color='#f59e0b', fontsize=12, fontweight='bold')
+
+    # 이동평균선
+    ma20 = np.convolve(closes, np.ones(20)/20, mode='valid')
+    ma60 = np.convolve(closes, np.ones(min(60, len(closes)))/ min(60, len(closes)), mode='valid')
+
+    if len(ma20) > 0:
+        ax.plot(dates[19:19+len(ma20)], ma20, color='#818cf8', linewidth=1.5,
+                linestyle='--', label='MA20', alpha=0.6)
+    if len(ma60) > 0:
+        ax.plot(dates[min(60, len(closes))-1:min(60, len(closes))-1+len(ma60)], ma60,
+                color='#c084fc', linewidth=1.5, linestyle='--', label='MA60', alpha=0.6)
+
+    # 스타일링
+    ax.set_xlabel('Date', color='#9aa0a6', fontsize=12)
+    ax.set_ylabel('KOSPI Index', color='#9aa0a6', fontsize=12)
+    ax.set_title('KOSPI Technical Analysis (Support, Resistance & Trend)',
+                 color='#e5e7eb', fontsize=14, fontweight='bold', pad=20)
+
+    ax.tick_params(colors='#9aa0a6', labelsize=10)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#2a2f4a')
+    ax.spines['bottom'].set_color('#2a2f4a')
+    ax.grid(True, alpha=0.15, color='#9aa0a6', linestyle='--')
+
+    # 범례
+    ax.legend(loc='upper left', fontsize=10, framealpha=0.9,
+              facecolor='#1a1f3a', edgecolor='#2a2f4a')
+
+    # 날짜 포맷
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days//10)))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    plt.tight_layout()
+
+    # 이미지로 저장
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a')
+    buf.seek(0)
+    plt.close()
+
     return buf.getvalue()

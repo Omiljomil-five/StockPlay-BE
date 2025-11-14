@@ -183,8 +183,9 @@ async def get_report_download_url(report_id: str):
         if report_id.startswith('report-2024-'):
             print(f"📄 Mock 리포트 다운로드 URL 생성: {report_id}")
 
-            # Mock 데이터로 PDF 생성
-            from ..services.pdf_generator import generate_dashboard_pdf
+            # Mock 데이터로 PDF 생성 (고퀄리티 리포트 사용)
+            from ..services.pdf_generator import generate_full_report_pdf
+            from ..services.ai_analyzer import generate_ai_analysis, get_fallback_analysis
 
             mock_signal = {
                 'symbol': 'MOCK-001',
@@ -200,7 +201,12 @@ async def get_report_download_url(report_id: str):
                 'confidenceScore': 85.0
             }
 
-            pdf_bytes = generate_dashboard_pdf(mock_signal)
+            # AI 분석 시도 (실패 시 fallback)
+            ai_analysis = generate_ai_analysis(mock_signal)
+            if not ai_analysis:
+                ai_analysis = get_fallback_analysis(mock_signal)
+
+            pdf_bytes = generate_full_report_pdf(mock_signal, ai_analysis)
             filename = f"{report_id}.pdf"
 
             # S3에 업로드

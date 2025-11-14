@@ -437,24 +437,22 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
     story.append(Spacer(1, 0.4*inch))
 
     # 6. KOSPI 기술적 분석 차트
-    story.append(Paragraph("📊 KOSPI 시장 분석 (지지선/저항선/추세선)", heading_style))
+    story.append(Paragraph("📊 KOSPI 시장 분석", heading_style))
 
     try:
-        from .chart_generator import generate_kospi_advanced_chart
+        from .chart_generator_pillow import generate_kospi_chart_pillow
 
-        kospi_chart_bytes = generate_kospi_advanced_chart(signal_data, days=60)
-        kospi_chart_img = Image(io.BytesIO(kospi_chart_bytes), width=6.5*inch, height=3.8*inch)
+        kospi_chart_bytes = generate_kospi_chart_pillow(signal_data, days=60)
+        kospi_chart_img = Image(io.BytesIO(kospi_chart_bytes), width=6.5*inch, height=3.25*inch)
         kospi_chart_img.hAlign = 'CENTER'
         story.append(kospi_chart_img)
         story.append(Spacer(1, 0.3*inch))
 
         # 차트 설명
         chart_desc = """
-        위 차트는 KOSPI 지수의 기술적 분석을 보여줍니다:<br/>
-        • <b>추세선:</b> 선형 회귀를 통한 현재 시장 추세 (상승/하락)<br/>
-        • <b>지지선 (Support):</b> 가격이 하락 시 지지를 받을 것으로 예상되는 수준<br/>
-        • <b>저항선 (Resistance):</b> 가격 상승 시 저항을 받을 것으로 예상되는 수준<br/>
-        • <b>이동평균선 (MA20, MA60):</b> 중장기 추세 파악<br/>
+        위 차트는 최근 60일간의 KOSPI 지수 추이를 보여줍니다.<br/>
+        • 현재 KOSPI 지수 수준과 최근 추세를 확인할 수 있습니다<br/>
+        • 주황색 점은 현재 시점의 KOSPI 지수입니다<br/>
         """
         story.append(Paragraph(chart_desc, normal_style))
         story.append(Spacer(1, 0.3*inch))

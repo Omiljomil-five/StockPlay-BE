@@ -56,13 +56,38 @@ def load_kospi_data(days: int = 60) -> tuple:
                         'open': float(row.get('open', 0))
                     })
 
-        # 최근 N일 데이터만 사용
-        data = sorted(data, key=lambda x: x['date'])[-days:]
+        # 데이터 필터링 (유효한 데이터만)
+        valid_data = []
+        for d in data:
+            try:
+                if d['date'] and d['close'] > 0:
+                    valid_data.append(d)
+            except (KeyError, TypeError, ValueError):
+                continue
 
-        dates = [datetime.strptime(d['date'], '%Y-%m-%d') for d in data]
-        closes = [d['close'] for d in data]
-        highs = [d['high'] for d in data]
-        lows = [d['low'] for d in data]
+        if not valid_data:
+            raise Exception("유효한 KOSPI 데이터가 없습니다")
+
+        # 최근 N일 데이터만 사용
+        valid_data = sorted(valid_data, key=lambda x: x['date'])[-days:]
+
+        dates = []
+        closes = []
+        highs = []
+        lows = []
+
+        for d in valid_data:
+            try:
+                dates.append(datetime.strptime(d['date'], '%Y-%m-%d'))
+                closes.append(float(d['close']))
+                highs.append(float(d['high']))
+                lows.append(float(d['low']))
+            except Exception as parse_error:
+                print(f"⚠️ 데이터 파싱 오류: {parse_error}")
+                continue
+
+        if not dates or not closes:
+            raise Exception("날짜 또는 가격 데이터 파싱 실패")
 
         print(f"✅ KOSPI 데이터 로드 완료: {len(dates)}일")
         return dates, closes, highs, lows
@@ -80,24 +105,36 @@ def load_kospi_data(days: int = 60) -> tuple:
 
 def calculate_support_resistance(prices: List[float], window: int = 5) -> tuple:
     """지지선과 저항선 계산"""
-    highs = []
-    lows = []
+    try:
+        if len(prices) < window * 2 + 1:
+            # 데이터가 충분하지 않으면 단순 최고/최저
+            return min(prices), max(prices)
 
-    for i in range(window, len(prices) - window):
-        # 고점: 양옆보다 높으면
-        if all(prices[i] >= prices[i-j] for j in range(1, window+1)) and \
-           all(prices[i] >= prices[i+j] for j in range(1, window+1)):
-            highs.append(prices[i])
+        highs = []
+        lows = []
 
-        # 저점: 양옆보다 낮으면
-        if all(prices[i] <= prices[i-j] for j in range(1, window+1)) and \
-           all(prices[i] <= prices[i+j] for j in range(1, window+1)):
-            lows.append(prices[i])
+        for i in range(window, len(prices) - window):
+            try:
+                # 고점: 양옆보다 높으면
+                if all(prices[i] >= prices[i-j] for j in range(1, window+1)) and \
+                   all(prices[i] >= prices[i+j] for j in range(1, window+1)):
+                    highs.append(prices[i])
 
-    resistance = np.mean(highs) if highs else max(prices)
-    support = np.mean(lows) if lows else min(prices)
+                # 저점: 양옆보다 낮으면
+                if all(prices[i] <= prices[i-j] for j in range(1, window+1)) and \
+                   all(prices[i] <= prices[i+j] for j in range(1, window+1)):
+                    lows.append(prices[i])
+            except (IndexError, TypeError):
+                continue
 
-    return support, resistance
+        resistance = float(np.mean(highs)) if highs else float(max(prices))
+        support = float(np.mean(lows)) if lows else float(min(prices))
+
+        return support, resistance
+    except Exception as e:
+        print(f"⚠️ 지지/저항선 계산 오류: {e}")
+        # Fallback: 단순 최고/최저
+        return float(min(prices)), float(max(prices))
 
 
 def calculate_trendline(dates: List[datetime], prices: List[float]) -> tuple:
@@ -355,16 +392,22 @@ def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -
     ax.text(dates[-1], closes[-1] + 30, f'{closes[-1]:.0f}',
             ha='center', va='bottom', color='#f59e0b', fontsize=12, fontweight='bold')
 
-    # 이동평균선
-    ma20 = np.convolve(closes, np.ones(20)/20, mode='valid')
-    ma60 = np.convolve(closes, np.ones(min(60, len(closes)))/ min(60, len(closes)), mode='valid')
+    # 이동평균선 (안전하게 계산)
+    try:
+        if len(closes) >= 20:
+            ma20 = np.convolve(closes, np.ones(20)/20, mode='valid')
+            if len(ma20) > 0 and len(dates) >= 19 + len(ma20):
+                ax.plot(dates[19:19+len(ma20)], ma20, color='#818cf8', linewidth=1.5,
+                        linestyle='--', label='MA20', alpha=0.6)
 
-    if len(ma20) > 0:
-        ax.plot(dates[19:19+len(ma20)], ma20, color='#818cf8', linewidth=1.5,
-                linestyle='--', label='MA20', alpha=0.6)
-    if len(ma60) > 0:
-        ax.plot(dates[min(60, len(closes))-1:min(60, len(closes))-1+len(ma60)], ma60,
-                color='#c084fc', linewidth=1.5, linestyle='--', label='MA60', alpha=0.6)
+        if len(closes) >= 60:
+            ma60_window = min(60, len(closes))
+            ma60 = np.convolve(closes, np.ones(ma60_window)/ma60_window, mode='valid')
+            if len(ma60) > 0 and len(dates) >= ma60_window - 1 + len(ma60):
+                ax.plot(dates[ma60_window-1:ma60_window-1+len(ma60)], ma60,
+                        color='#c084fc', linewidth=1.5, linestyle='--', label='MA60', alpha=0.6)
+    except Exception as ma_error:
+        print(f"⚠️ 이동평균선 계산 오류: {ma_error}")
 
     # 스타일링
     ax.set_xlabel('Date', color='#9aa0a6', fontsize=12)
@@ -383,10 +426,13 @@ def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -
     ax.legend(loc='upper left', fontsize=10, framealpha=0.9,
               facecolor='#1a1f3a', edgecolor='#2a2f4a')
 
-    # 날짜 포맷
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days//10)))
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    # 날짜 포맷 (안전하게 처리)
+    try:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days//10)))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    except Exception as date_error:
+        print(f"⚠️ 날짜 포맷 오류: {date_error}")
 
     plt.tight_layout()
 

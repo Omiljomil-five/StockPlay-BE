@@ -10,24 +10,32 @@ import numpy as np
 import os
 import csv
 from io import StringIO
+import traceback
 
-# 한글 폰트 설정
-plt.rcParams['font.family'] = 'DejaVu Sans'
-plt.rcParams['axes.unicode_minus'] = False
+# 한글 폰트 설정 (Lambda 환경 고려)
+try:
+    plt.rcParams['font.family'] = 'DejaVu Sans'
+    plt.rcParams['axes.unicode_minus'] = False
+except Exception as e:
+    print(f"⚠️ 폰트 설정 실패: {e}")
+    pass
 
 
 def load_kospi_data(days: int = 60) -> tuple:
     """KOSPI 데이터 로드 (S3 또는 로컬)"""
     try:
         use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
+        print(f"📂 KOSPI 데이터 로드: {'S3' if use_s3 else '로컬'} (days={days})")
 
         if use_s3:
             import boto3
             s3_bucket = os.getenv('S3_DATA_BUCKET', 'stockplay-data-yjw-20251113')
+            print(f"📦 S3 버킷: {s3_bucket}")
             s3 = boto3.client('s3')
 
             obj = s3.get_object(Bucket=s3_bucket, Key='data/kospi.csv')
             csv_content = obj['Body'].read().decode('utf-8-sig')
+            print(f"✅ S3에서 KOSPI 데이터 읽기 완료: {len(csv_content)} bytes")
 
             reader = csv.DictReader(StringIO(csv_content))
             data = []
@@ -354,11 +362,25 @@ def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -
     Returns:
         PNG 이미지 바이트
     """
-    fig, ax = plt.subplots(figsize=(12, 7), facecolor='#1a1f3a')
-    ax.set_facecolor('#0a0e27')
+    print(f"📊 KOSPI 차트 생성 시작 (days={days})")
+
+    try:
+        fig, ax = plt.subplots(figsize=(12, 7), facecolor='#1a1f3a')
+        ax.set_facecolor('#0a0e27')
+    except Exception as e:
+        print(f"❌ Figure 생성 실패: {e}")
+        traceback.print_exc()
+        raise
 
     # KOSPI 데이터 로드
-    dates, closes, highs, lows = load_kospi_data(days)
+    try:
+        dates, closes, highs, lows = load_kospi_data(days)
+        print(f"✅ KOSPI 데이터 로드 성공: {len(dates)}일")
+    except Exception as e:
+        print(f"❌ KOSPI 데이터 로드 실패: {e}")
+        traceback.print_exc()
+        plt.close(fig)
+        raise
 
     # 추세선 계산
     trendline, slope = calculate_trendline(dates, closes)
@@ -437,9 +459,17 @@ def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -
     plt.tight_layout()
 
     # 이미지로 저장
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a')
-    buf.seek(0)
-    plt.close()
-
-    return buf.getvalue()
+    try:
+        buf = io.BytesIO()
+        print("📸 차트를 PNG로 저장 중...")
+        plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a', bbox_inches='tight')
+        buf.seek(0)
+        image_bytes = buf.getvalue()
+        print(f"✅ 차트 저장 완료: {len(image_bytes)} bytes")
+        plt.close(fig)
+        return image_bytes
+    except Exception as e:
+        print(f"❌ 차트 저장 실패: {e}")
+        traceback.print_exc()
+        plt.close(fig)
+        raise

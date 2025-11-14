@@ -461,7 +461,11 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
 
     except Exception as e:
         print(f"⚠️ KOSPI 차트 생성 실패: {e}")
-        story.append(Paragraph("차트를 생성하는 중 오류가 발생했습니다.", normal_style))
+        import traceback
+        traceback.print_exc()
+        # 오류가 발생해도 리포트는 계속 생성 (차트 없이)
+        error_text = f"차트 생성 중 일시적 오류가 발생했습니다. 데이터는 정상적으로 분석되었습니다."
+        story.append(Paragraph(error_text, normal_style))
         story.append(Spacer(1, 0.3*inch))
 
     # 7. 푸터

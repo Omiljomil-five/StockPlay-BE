@@ -24,12 +24,15 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 @router.post("/generate", response_model=ApiResponse[PdfGenerationResponse])
 async def generate_pdf(request: PdfGenerationRequest):
     """
-    대시보드용 간단 PDF 생성
+    대시보드용 전문 리포트 PDF 생성 (AI 분석 + KOSPI 차트 포함)
 
-    - 시그널 카드 데이터를 기반으로 PDF 생성
-    - 차트는 프론트엔드에서 렌더링
+    - 시그널 카드 데이터를 기반으로 전문 리포트 생성
+    - Claude AI 분석 포함 (선택적)
+    - KOSPI 기술적 분석 차트 포함
     """
     try:
+        from ..services.ai_analyzer import generate_ai_analysis, get_fallback_analysis
+
         # companyName이 없으면 자동 생성
         company_name = request.companyName or f"{request.sector} 종목 {request.symbol}"
 
@@ -48,8 +51,13 @@ async def generate_pdf(request: PdfGenerationRequest):
             'confidenceScore': request.confidenceScore
         }
 
-        # PDF 생성
-        pdf_bytes = generate_dashboard_pdf(signal_data)
+        # AI 분석 생성 (실패 시 fallback)
+        ai_analysis = generate_ai_analysis(signal_data)
+        if not ai_analysis:
+            ai_analysis = get_fallback_analysis(signal_data)
+
+        # 전문 리포트 PDF 생성
+        pdf_bytes = generate_full_report_pdf(signal_data, ai_analysis)
 
         # 파일명 생성 (티커 심볼 사용)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

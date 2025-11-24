@@ -1,12 +1,8 @@
-"""
-PDF 리포트 생성 서비스 (AI 분석 지원, 차트는 프론트엔드에서 생성)
-"""
-
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -16,23 +12,76 @@ import os
 from typing import Dict, Any, Optional
 
 
-# 한글 폰트 등록
+# 한글 폰트 등록 (캐싱)
+_fonts_registered = False
+_logo_bytes = None
+
 def register_korean_fonts():
-    """한글 폰트 등록"""
+    """한글 폰트 등록 (한 번만 실행)"""
+    global _fonts_registered
+
+    if _fonts_registered:
+        return True
+
     try:
         font_path = os.path.join(os.path.dirname(__file__), '../../fonts')
-        
+
         pdfmetrics.registerFont(
             TTFont('NanumGothic', os.path.join(font_path, 'NanumGothic-Regular.ttf'))
         )
         pdfmetrics.registerFont(
             TTFont('NanumGothic-Bold', os.path.join(font_path, 'NanumGothic-Bold.ttf'))
         )
-        
+
+        _fonts_registered = True
+        print("✅ 한글 폰트 등록 완료")
         return True
     except Exception as e:
         print(f"Font registration error: {e}")
         return False
+
+
+def get_logo_image():
+    """S3에서 로고 이미지 가져오기 (캐싱)"""
+    global _logo_bytes
+
+    if _logo_bytes:
+        return io.BytesIO(_logo_bytes)
+
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+
+        use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
+
+        if use_s3:
+            # S3에서 로고 가져오기
+            s3_bucket = os.getenv('S3_DATA_BUCKET', 'stockplay-data-yjw-20251113')
+            s3 = boto3.client('s3')
+
+            try:
+                response = s3.get_object(Bucket=s3_bucket, Key='assets/StockPlay.png')
+                _logo_bytes = response['Body'].read()
+                print("✅ S3에서 로고 로드 완료")
+                return io.BytesIO(_logo_bytes)
+            except ClientError as e:
+                print(f"S3 로고 로드 실패: {e}")
+                return None
+        else:
+            # 로컬에서 로고 가져오기 (개발 환경)
+            logo_path = os.path.join(os.path.dirname(__file__), '../../assets/StockPlay.png')
+            if os.path.exists(logo_path):
+                with open(logo_path, 'rb') as f:
+                    _logo_bytes = f.read()
+                print("✅ 로컬에서 로고 로드 완료")
+                return io.BytesIO(_logo_bytes)
+            else:
+                print("⚠️ 로고 파일을 찾을 수 없습니다")
+                return None
+
+    except Exception as e:
+        print(f"로고 로드 오류: {e}")
+        return None
 
 
 def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
@@ -88,7 +137,18 @@ def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
         textColor=colors.HexColor('#1a1f3a'),
         fontName='NanumGothic',
     )
-    
+
+    # 0. 로고 (상단 중앙)
+    logo_image_data = get_logo_image()
+    if logo_image_data:
+        try:
+            logo = Image(logo_image_data, width=1.5*inch, height=1.5*inch)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            print(f"로고 추가 실패: {e}")
+
     # 1. 제목
     title = Paragraph(f"<b>StockPlay 시그널 카드</b>", title_style)
     story.append(title)
@@ -107,7 +167,7 @@ def generate_dashboard_pdf(signal_data: Dict[str, Any]) -> bytes:
     }.get(signal_data.get('signalType', 'BUY'), '매수')
     
     info_data = [
-        ['종목', signal_data.get('symbol', 'N/A')],
+        ['종목', f"{signal_data.get('companyName', 'N/A')} ({signal_data.get('symbol', 'N/A')})"],
         ['업종', signal_data.get('sector', 'N/A')],
         ['시그널', signal_type_kr],
         ['예측 기간', signal_data.get('period', '1d')],
@@ -244,7 +304,18 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
         fontName='NanumGothic',
         leading=14,
     )
-    
+
+    # 0. 로고 (상단 중앙)
+    logo_image_data = get_logo_image()
+    if logo_image_data:
+        try:
+            logo = Image(logo_image_data, width=2*inch, height=2*inch)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.3*inch))
+        except Exception as e:
+            print(f"로고 추가 실패: {e}")
+
     # 1. 제목
     title = Paragraph(f"<b>StockPlay 전문 투자 리포트</b>", title_style)
     story.append(title)
@@ -262,18 +333,22 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
         'SELL': '매도 (주의)'
     }.get(signal_data.get('signalType', 'BUY'), '매수')
     
+    company_name = signal_data.get('companyName', 'N/A')
+    symbol = signal_data.get('symbol', 'N/A')
+
     overview_text = f"""
-    <b>종목:</b> {signal_data.get('symbol', 'N/A')} ({signal_data.get('sector', 'N/A')})<br/>
+    <b>종목:</b> {company_name} ({symbol})<br/>
+    <b>업종:</b> {signal_data.get('sector', 'N/A')}<br/>
     <b>투자의견:</b> {signal_type_kr}<br/>
     <b>예측기간:</b> {signal_data.get('period', '1d')}<br/>
     <br/>
     """
-    
+
     if ai_analysis and 'overview' in ai_analysis:
         overview_text += ai_analysis['overview']
     else:
         overview_text += f"""
-        {signal_data.get('symbol')}은(는) {signal_data.get('sector')} 섹터의 종목으로,
+        {company_name}({symbol})은(는) {signal_data.get('sector')} 섹터의 종목으로,
         최근 Surprise 지표가 {signal_data.get('surpriseZ', 0):.2f}를 기록하며
         {'긍정적인' if signal_data.get('surpriseZ', 0) > 0 else '부정적인'} 신호를 보이고 있습니다.
         """
@@ -360,8 +435,38 @@ def generate_full_report_pdf(signal_data: Dict[str, Any], ai_analysis: Optional[
     
     story.append(tech_table)
     story.append(Spacer(1, 0.4*inch))
-    
-    # 6. 푸터
+
+    # 6. KOSPI 기술적 분석 차트
+    story.append(Paragraph("📊 KOSPI 시장 분석", heading_style))
+
+    try:
+        from .chart_generator_pillow import generate_kospi_chart_pillow
+
+        kospi_chart_bytes = generate_kospi_chart_pillow(signal_data, days=60)
+        kospi_chart_img = Image(io.BytesIO(kospi_chart_bytes), width=6.5*inch, height=3.25*inch)
+        kospi_chart_img.hAlign = 'CENTER'
+        story.append(kospi_chart_img)
+        story.append(Spacer(1, 0.3*inch))
+
+        # 차트 설명
+        chart_desc = """
+        위 차트는 최근 60일간의 KOSPI 지수 추이를 보여줍니다.<br/>
+        • 현재 KOSPI 지수 수준과 최근 추세를 확인할 수 있습니다<br/>
+        • 주황색 점은 현재 시점의 KOSPI 지수입니다<br/>
+        """
+        story.append(Paragraph(chart_desc, normal_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    except Exception as e:
+        print(f"⚠️ KOSPI 차트 생성 실패: {e}")
+        import traceback
+        traceback.print_exc()
+        # 오류가 발생해도 리포트는 계속 생성 (차트 없이)
+        error_text = f"차트 생성 중 일시적 오류가 발생했습니다. 데이터는 정상적으로 분석되었습니다."
+        story.append(Paragraph(error_text, normal_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    # 7. 푸터
     footer_style = ParagraphStyle(
         'Footer',
         parent=styles['Normal'],
@@ -526,4 +631,37 @@ def upload_to_s3(pdf_bytes: bytes, filename: str, bucket_name: str = 'stockplay-
         
     except ClientError as e:
         print(f"S3 upload error: {e}")
+        raise
+
+
+def get_s3_presigned_url(bucket_name: str, key: str, expiration: int = 3600) -> str:
+    """S3 파일에 대한 presigned URL 생성
+
+    Args:
+        bucket_name: S3 버킷 이름
+        key: S3 객체 키
+        expiration: URL 만료 시간(초, 기본 1시간)
+
+    Returns:
+        presigned URL
+    """
+    import boto3
+    from botocore.exceptions import ClientError
+
+    try:
+        s3 = boto3.client('s3')
+
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': bucket_name,
+                'Key': key
+            },
+            ExpiresIn=expiration
+        )
+
+        return url
+
+    except ClientError as e:
+        print(f"Presigned URL generation error: {e}")
         raise

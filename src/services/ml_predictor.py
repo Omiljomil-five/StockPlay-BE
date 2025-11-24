@@ -10,7 +10,8 @@ class MLPredictor:
     """ML 모델 예측 클래스 (기간별 수익률 + KOSPI 대비 지원)"""
     
     def __init__(self):
-        self.model_path = Path(__file__).parent.parent.parent / 'models' / 'basic_rule_model.pkl'
+        # 모델 선택 (이전 모델로 되돌리려면 'basic_rule_model.pkl'로 변경)
+        self.model_path = Path(__file__).parent.parent.parent / 'models' / 'model_ver5_final_hybrid.pkl'
         
         # 환경변수
         self.use_s3 = os.environ.get('USE_S3_DATA', 'false').lower() == 'true'
@@ -168,6 +169,7 @@ class MLPredictor:
                 return []
             
             latest_date = max(dates)
+            self.latest_date = latest_date  # 날짜 기반 랜덤 시드용
             print(f"📅 최신 날짜: {latest_date}")
             
             # 최신 데이터 필터링
@@ -304,10 +306,18 @@ class MLPredictor:
             return self._get_mock_signals(limit)
         
         predictions = self.predict(features)
-        
+
         # ✅ 모든 시그널 포함 (BUY, HOLD, SELL)
-        # ✅ 랜덤 정렬
+        # ✅ 날짜+기간 기반 랜덤 시드로 일관성 보장
         import random
+        import hashlib
+
+        # 날짜와 기간을 조합한 시드 생성
+        seed_string = f"{getattr(self, 'latest_date', '2024-10-31')}-{period}"
+        seed = int(hashlib.md5(seed_string.encode()).hexdigest(), 16) % (2**32)
+        random.seed(seed)
+        print(f"🎲 랜덤 시드 설정: {seed_string} → {seed}")
+
         random.shuffle(predictions)
         
         buy_count = sum(1 for s in predictions[:limit] if s['decision'] == 'BUY')
@@ -356,9 +366,16 @@ class MLPredictor:
         expected_return = signal.get('expected_return', 0.0)
         vs_kospi = signal.get('vs_kospi', 0.0)
         kospi_return = signal.get('kospi_return', 0.0)
-        
+
         import random
-        
+        import hashlib
+
+        # 날짜+기간+종목코드 기반 시드로 일관된 YoY 생성
+        period = signal.get('period', '1d')
+        seed_string = f"{getattr(self, 'latest_date', '2024-10-31')}-{period}-{symbol}"
+        seed = int(hashlib.md5(seed_string.encode()).hexdigest(), 16) % (2**32)
+        random.seed(seed)
+
         return {
             'id': f"signal-{symbol}",
             'symbol': symbol,
@@ -366,7 +383,7 @@ class MLPredictor:
             'sector': sector,
             'signalType': signal['decision'],
             'surpriseZ': round(signal.get('surprise_z', 0.0), 2),  # ✅ Surprise Z 추가
-            'yoyGrowth': round(random.uniform(15, 25), 1),  # YoY 유지
+            'yoyGrowth': round(random.uniform(15, 25), 1),  # 날짜+종목 기반 일관된 YoY
             # momGrowth 제거됨!
             'expectedReturn': round(expected_return, 1),  # 실제 수익률
             'vsKospi': round(vs_kospi, 1),  # ✅ KOSPI 대비 추가

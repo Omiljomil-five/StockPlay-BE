@@ -11,6 +11,8 @@ class SubscriptionResponse(BaseModel):
     notification_enabled: bool
     created_at: str
     updated_at: str
+    is_new_subscriber: Optional[bool] = None  # 신규 구독자 여부
+    message: Optional[str] = None  # 응답 메시지
 
 class ToggleNotificationRequest(BaseModel):
     """알림 설정 토글 요청"""

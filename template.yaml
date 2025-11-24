@@ -5,7 +5,7 @@ Description: StockPlay Backend API
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 512
+    MemorySize: 1024
     Runtime: python3.12
     Environment:
       Variables:
@@ -34,6 +34,8 @@ Resources:
             BucketName: stockplay-reports-yjw-20251113
         - DynamoDBCrudPolicy:
             TableName: stockplay-main
+        - SESCrudPolicy:
+            IdentityName: "*"
       Events:
         ApiRoot:
           Type: Api

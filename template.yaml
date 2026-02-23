@@ -48,6 +48,34 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  # ARIMA 배치 예측 Lambda
+  ARIMAPredictFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stockplay-arima-predict
+      Handler: arima_handler.lambda_handler
+      CodeUri: .
+      Description: StockPlay ARIMA Batch Prediction (Monthly)
+      Timeout: 300
+      MemorySize: 2048
+      Environment:
+        Variables:
+          PYTHONPATH: /var/task
+          USE_S3_DATA: "true"
+          S3_DATA_BUCKET: "stockplay-data-yjw-20251113"
+      Policies:
+        - S3ReadPolicy:
+            BucketName: stockplay-data-yjw-20251113
+        - S3CrudPolicy:
+            BucketName: stockplay-data-yjw-20251113
+      Events:
+        MonthlySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 1 1 * ? *)
+            Description: Run ARIMA prediction on 1st of each month at 10 AM KST
+            Enabled: true
+
   # 이메일 발송 Lambda
   EmailSenderFunction:
     Type: AWS::Serverless::Function
@@ -90,3 +118,7 @@ Outputs:
   EmailSenderArn:
     Description: "Email Sender Lambda ARN"
     Value: !GetAtt EmailSenderFunction.Arn
+
+  ARIMAPredictArn:
+    Description: "ARIMA Predict Lambda ARN"
+    Value: !GetAtt ARIMAPredictFunction.Arn

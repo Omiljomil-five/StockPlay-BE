@@ -7,12 +7,14 @@ class TradingSignal(BaseModel):
     symbol: str
     companyName: str
     sector: str
-    signalType: str  # "BUY" | "SELL"
-    yoyGrowth: float  # YoY 유지
-    # momGrowth 제거!
+    signalType: str  # "BUY" | "HOLD" | "SELL"
+    surpriseZ: Optional[float] = 0.0
+    yoyGrowth: float
     expectedReturn: float
+    vsKospi: Optional[float] = 0.0
+    kospiReturn: Optional[float] = 0.0
     confidenceScore: float
-    period: Optional[str] = "1d"  # 기간 추가
+    period: Optional[str] = "1d"
 
 class PerformanceMetrics(BaseModel):
     avgReturn: float

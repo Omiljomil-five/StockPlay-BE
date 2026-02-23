@@ -12,13 +12,13 @@ async def get_signals(
     limit: int = Query(20, ge=1, le=100, description="결과 개수")
 ):
     """
-    최신 트레이딩 시그널 조회 (기간별 예측 지원)
-    
+    최신 트레이딩 시그널 조회 (ARIMA 예측 + v5 5-Factor 규칙 기반)
+
     - **period**: 1d(1일), 5d(5일), 10d(10일), 20d(20일)
+    - ARIMA 예측 결과가 있으면 모델 기반 판단, 없으면 정적 CSV 폴백
     """
-    
+
     try:
-        # 실제 ML 모델 사용 (기간 파라미터 추가)
         predictor = get_predictor()
         raw_signals = predictor.get_top_signals(limit=limit, period=period)
         

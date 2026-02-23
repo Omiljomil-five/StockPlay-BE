@@ -1,15 +1,16 @@
 """SES 이메일 전송 서비스"""
 import boto3
 from typing import Optional
-import os
+import traceback
 
 
 class EmailService:
     """AWS SES를 사용한 이메일 전송 클래스"""
 
     def __init__(self):
-        self.ses = boto3.client('ses', region_name='ap-northeast-2')
-        self.from_email = os.getenv('SES_FROM_EMAIL', 'yyyyjw@naver.com')
+        from ..config import settings
+        self.ses = boto3.client('ses', region_name=settings.AWS_REGION)
+        self.from_email = settings.SES_FROM_EMAIL
         print(f"✅ SES 이메일 서비스 초기화: {self.from_email}")
 
     def send_welcome_email(self, to_email: str) -> bool:
@@ -192,8 +193,8 @@ StockPlay Team
             return True
 
         except Exception as e:
-            print(f"❌ 환영 이메일 전송 실패: {to_email} - {e}")
-            import traceback
+            print(f"❌ 환영 이메일 전송 실패: {to_email} - {type(e).__name__}: {e}")
+            print(f"   발신자: {self.from_email}")
             traceback.print_exc()
             return False
 

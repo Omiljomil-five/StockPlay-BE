@@ -11,7 +11,7 @@ s3 = boto3.client('s3', region_name='ap-northeast-2')
 
 # 환경변수
 DYNAMODB_TABLE = os.environ.get('DYNAMODB_TABLE', 'stockplay-main')
-SES_FROM_EMAIL = os.environ.get('SES_FROM_EMAIL', 'noreply@stockplay.com')
+SES_FROM_EMAIL = os.environ.get('SES_FROM_EMAIL', 'yyyyjw@naver.com')
 S3_REPORT_BUCKET = os.environ.get('S3_REPORT_BUCKET', 'stockplay-reports-yjw-20251113')
 API_URL = os.environ.get('API_URL', 'https://rwcdhytnni.execute-api.ap-northeast-2.amazonaws.com/Prod/api')
 
@@ -91,71 +91,144 @@ def send_email(to_email: str, report_data: Dict[str, Any]) -> bool:
 
 
 def generate_email_html(report_data: Dict[str, Any]) -> str:
-    """HTML 이메일 본문 생성"""
-    
+    """HTML 이메일 본문 생성 (프리미엄 스타일)"""
+
     top_picks = report_data.get('topPicks', [])[:5]
     performance = report_data.get('performance', {})
-    
+
+    # 시그널 분포 계산
+    all_signals = report_data.get('topPicks', [])
+    buy_count = sum(1 for s in all_signals if s.get('signalType') == 'BUY')
+    hold_count = sum(1 for s in all_signals if s.get('signalType') == 'HOLD')
+    sell_count = sum(1 for s in all_signals if s.get('signalType') == 'SELL')
+    total_signals = max(buy_count + hold_count + sell_count, 1)
+    buy_pct = buy_count / total_signals * 100
+    hold_pct = hold_count / total_signals * 100
+    sell_pct = sell_count / total_signals * 100
+
+    # 색상 코딩된 종목 테이블
     picks_html = ""
     for pick in top_picks:
+        signal_type = pick.get('signalType', 'BUY')
+        ret = pick.get('expectedReturn', 0)
+        ret_color = '#10b981' if ret >= 0 else '#ef4444'
+        signal_colors = {'BUY': '#10b981', 'HOLD': '#f59e0b', 'SELL': '#ef4444'}
+        signal_bg = {'BUY': '#ecfdf5', 'HOLD': '#fffbeb', 'SELL': '#fef2f2'}
+        badge_color = signal_colors.get(signal_type, '#6b7280')
+        badge_bg = signal_bg.get(signal_type, '#f3f4f6')
         picks_html += f"""
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #eee;">{pick['symbol']}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #eee;">{pick['sector']}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #eee; color: #10b981;">{pick['expectedReturn']}%</td>
-            <td style="padding: 10px; border-bottom: 1px solid #eee;">{pick['confidenceScore']}%</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #f0f0f0; font-weight: bold;">{pick.get('symbol', '')}</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #f0f0f0; color: #666;">{pick.get('sector', '')}</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #f0f0f0;">
+                <span style="background: {badge_bg}; color: {badge_color}; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">{signal_type}</span>
+            </td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #f0f0f0; color: {ret_color}; font-weight: bold;">{ret:+.1f}%</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #f0f0f0;">{pick.get('confidenceScore', 0):.0f}%</td>
         </tr>
         """
-    
+
+    avg_return = performance.get('avgReturn', 0)
+    win_rate = performance.get('winRate', 0)
+    sharpe = performance.get('sharpeRatio', 0)
+
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
-    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
-            <h1 style="margin: 0;">📊 StockPlay</h1>
-            <p style="margin: 10px 0 0 0;">일일 트레이딩 리포트</p>
+    <body style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 0; background-color: #f5f5f5;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #4c6fff 0%, #667eea 50%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+            <h1 style="margin: 0; color: white; font-size: 28px;">StockPlay</h1>
+            <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.85); font-size: 14px;">Daily Trading Report - {datetime.now().strftime('%Y.%m.%d')}</p>
         </div>
-        
-        <div style="margin-top: 30px;">
-            <h2 style="color: #333;">🎯 오늘의 Top 5 추천 종목</h2>
-            <table style="width: 100%; border-collapse: collapse;">
+
+        <div style="background: white; padding: 30px;">
+            <!-- Performance Cards -->
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                <tr>
+                    <td style="width: 33%; text-align: center; padding: 20px 10px; background: #f8f9ff; border-radius: 8px 0 0 8px;">
+                        <div style="font-size: 24px; font-weight: bold; color: {'#10b981' if avg_return >= 0 else '#ef4444'};">{avg_return:+.1f}%</div>
+                        <div style="font-size: 12px; color: #888; margin-top: 4px;">Avg Return</div>
+                    </td>
+                    <td style="width: 33%; text-align: center; padding: 20px 10px; background: #f8f9ff; border-left: 1px solid #e8e8e8; border-right: 1px solid #e8e8e8;">
+                        <div style="font-size: 24px; font-weight: bold; color: #4c6fff;">{win_rate:.0f}%</div>
+                        <div style="font-size: 12px; color: #888; margin-top: 4px;">Win Rate</div>
+                    </td>
+                    <td style="width: 33%; text-align: center; padding: 20px 10px; background: #f8f9ff; border-radius: 0 8px 8px 0;">
+                        <div style="font-size: 24px; font-weight: bold; color: #4c6fff;">{sharpe:.2f}</div>
+                        <div style="font-size: 12px; color: #888; margin-top: 4px;">Sharpe Ratio</div>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Signal Distribution Bar -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="color: #333; font-size: 14px; margin-bottom: 10px;">Signal Distribution</h3>
+                <div style="display: flex; height: 28px; border-radius: 14px; overflow: hidden; background: #f0f0f0;">
+                    <div style="width: {buy_pct:.0f}%; background: #10b981; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: white; font-size: 11px; font-weight: bold;">{'BUY ' + str(buy_count) if buy_pct > 15 else ''}</span>
+                    </div>
+                    <div style="width: {hold_pct:.0f}%; background: #f59e0b; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: white; font-size: 11px; font-weight: bold;">{'HOLD ' + str(hold_count) if hold_pct > 15 else ''}</span>
+                    </div>
+                    <div style="width: {sell_pct:.0f}%; background: #ef4444; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: white; font-size: 11px; font-weight: bold;">{'SELL ' + str(sell_count) if sell_pct > 15 else ''}</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: #888;">
+                    <span>BUY {buy_count} ({buy_pct:.0f}%)</span>
+                    <span>HOLD {hold_count} ({hold_pct:.0f}%)</span>
+                    <span>SELL {sell_count} ({sell_pct:.0f}%)</span>
+                </div>
+            </div>
+
+            <!-- Top 5 Picks Table -->
+            <h2 style="color: #333; font-size: 16px; margin-bottom: 15px;">Top 5 Picks</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 <thead>
-                    <tr style="background-color: #f8f9fa;">
-                        <th style="padding: 10px; text-align: left;">종목</th>
-                        <th style="padding: 10px; text-align: left;">섹터</th>
-                        <th style="padding: 10px; text-align: left;">예상수익률</th>
-                        <th style="padding: 10px; text-align: left;">신뢰도</th>
+                    <tr style="background-color: #4c6fff;">
+                        <th style="padding: 12px 10px; text-align: left; color: white; font-size: 12px;">Symbol</th>
+                        <th style="padding: 12px 10px; text-align: left; color: white; font-size: 12px;">Sector</th>
+                        <th style="padding: 12px 10px; text-align: left; color: white; font-size: 12px;">Signal</th>
+                        <th style="padding: 12px 10px; text-align: left; color: white; font-size: 12px;">Return</th>
+                        <th style="padding: 12px 10px; text-align: left; color: white; font-size: 12px;">Conf.</th>
                     </tr>
                 </thead>
                 <tbody>
                     {picks_html}
                 </tbody>
             </table>
+
+            <!-- CTA Button -->
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="https://dj4zhs98x0113.cloudfront.net/reports" style="display: inline-block; background: linear-gradient(135deg, #4c6fff, #667eea); color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">
+                    View Full Report
+                </a>
+            </div>
         </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 10px;">
-            <h3 style="margin-top: 0; color: #333;">📈 성과 지표</h3>
-            <p><strong>평균 수익률:</strong> {performance.get('avgReturn', 0)}%</p>
-            <p><strong>승률:</strong> {performance.get('winRate', 0)}%</p>
-            <p><strong>Sharpe Ratio:</strong> {performance.get('sharpeRatio', 0)}</p>
-        </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background-color: #fff3cd; border-radius: 10px; border-left: 4px solid #ffc107;">
-            <p style="margin: 0; color: #856404;">
-                ⚠️ 본 리포트는 투자 참고용이며, 투자 판단의 책임은 투자자 본인에게 있습니다.
+
+        <!-- Disclaimer -->
+        <div style="padding: 20px 30px; background-color: #fff8e1; border-top: 3px solid #ffc107;">
+            <p style="margin: 0; color: #856404; font-size: 12px;">
+                ⚠️ This report is for reference only. Investment decisions and outcomes are the sole responsibility of the investor.
             </p>
         </div>
-        
-        <div style="margin-top: 30px; text-align: center; color: #999; font-size: 12px;">
-            <p>© 2025 StockPlay. All rights reserved.</p>
+
+        <!-- Footer -->
+        <div style="padding: 20px; text-align: center; color: #999; font-size: 11px;">
+            <p style="margin: 0;">© 2025 StockPlay. All rights reserved.</p>
+            <p style="margin: 5px 0 0 0;">
+                <a href="https://dj4zhs98x0113.cloudfront.net/subscribe" style="color: #4c6fff; text-decoration: none;">Manage Subscription</a>
+            </p>
         </div>
     </body>
     </html>
     """
-    
+
     return html
 
 

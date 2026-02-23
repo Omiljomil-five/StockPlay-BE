@@ -26,6 +26,7 @@ Resources:
           USE_S3_DATA: "true"
           S3_DATA_BUCKET: "stockplay-data-yjw-20251113"
           DYNAMODB_TABLE: "stockplay-main"
+          SES_FROM_EMAIL: "yyyyjw@naver.com"
           DEBUG: "false"
       Policies:
         - S3ReadPolicy:

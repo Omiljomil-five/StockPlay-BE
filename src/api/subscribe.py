@@ -23,13 +23,16 @@ async def subscribe(request: SubscribeRequest):
             # 신규 구독 성공 - 환영 이메일 전송
             data = result['data']
 
-            # 환영 이메일 전송 (비동기로 실패해도 구독은 성공)
+            # 환영 이메일 전송 (실패해도 구독은 성공)
+            email_sent = False
             try:
                 from ..services.email_service import get_email_service
                 email_service = get_email_service()
-                email_service.send_welcome_email(request.email)
+                email_sent = email_service.send_welcome_email(request.email)
             except Exception as email_error:
                 print(f"⚠️ 환영 이메일 전송 실패 (구독은 성공): {email_error}")
+                import traceback
+                traceback.print_exc()
 
             response_data = SubscriptionResponse(
                 email=data['email'],
@@ -37,7 +40,8 @@ async def subscribe(request: SubscribeRequest):
                 created_at=data['created_at'],
                 updated_at=data['updated_at'],
                 is_new_subscriber=True,
-                message="구독이 완료되었습니다! 환영 이메일을 확인해주세요."
+                email_sent=email_sent,
+                message="구독이 완료되었습니다! 환영 이메일을 확인해주세요." if email_sent else "구독이 완료되었습니다! (환영 이메일 전송에 실패했습니다)"
             )
             return ApiResponse(success=True, data=response_data)
         else:

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # AWS 설정
     AWS_REGION: str = "ap-northeast-2"
     S3_BUCKET_NAME: str = "stockplay-reports-yjw-20251113"
+    SES_FROM_EMAIL: str = "yyyyjw@naver.com"
     
     class Config:
         env_file = ".env"

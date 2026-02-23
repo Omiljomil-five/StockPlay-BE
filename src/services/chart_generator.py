@@ -473,3 +473,221 @@ def generate_kospi_advanced_chart(signal_data: Dict[str, Any], days: int = 60) -
         traceback.print_exc()
         plt.close(fig)
         raise
+
+
+def generate_signal_distribution_chart(signals: List[Dict[str, Any]]) -> bytes:
+    """
+    시그널 분포 도넛 차트 생성
+
+    Args:
+        signals: 시그널 리스트 (각각 signalType 포함)
+
+    Returns:
+        PNG 이미지 바이트
+    """
+    fig, ax = plt.subplots(figsize=(6, 6), facecolor='#1a1f3a')
+
+    # 시그널 타입별 카운트
+    buy_count = sum(1 for s in signals if s.get('signalType') == 'BUY')
+    hold_count = sum(1 for s in signals if s.get('signalType') == 'HOLD')
+    sell_count = sum(1 for s in signals if s.get('signalType') == 'SELL')
+
+    counts = [buy_count, hold_count, sell_count]
+    labels = ['BUY', 'HOLD', 'SELL']
+    chart_colors = ['#10b981', '#f59e0b', '#ef4444']
+
+    # 0인 항목 제거
+    filtered = [(c, l, col) for c, l, col in zip(counts, labels, chart_colors) if c > 0]
+    if not filtered:
+        filtered = [(1, 'No Data', '#9aa0a6')]
+
+    counts_f, labels_f, colors_f = zip(*filtered)
+
+    wedges, texts, autotexts = ax.pie(
+        counts_f,
+        labels=labels_f,
+        colors=colors_f,
+        autopct='%1.0f%%',
+        startangle=90,
+        pctdistance=0.75,
+        wedgeprops=dict(width=0.4, edgecolor='#1a1f3a', linewidth=2)
+    )
+
+    for text in texts:
+        text.set_color('#e5e7eb')
+        text.set_fontsize(12)
+        text.set_fontweight('bold')
+    for autotext in autotexts:
+        autotext.set_color('#e5e7eb')
+        autotext.set_fontsize(11)
+
+    # 중앙 텍스트
+    total = sum(counts_f)
+    ax.text(0, 0, f'{total}\nSignals', ha='center', va='center',
+            fontsize=16, fontweight='bold', color='#e5e7eb')
+
+    ax.set_title('Signal Distribution', color='#e5e7eb', fontsize=14,
+                 fontweight='bold', pad=20)
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a', bbox_inches='tight')
+    buf.seek(0)
+    plt.close(fig)
+
+    return buf.getvalue()
+
+
+def generate_sector_performance_chart(sector_data: List[Dict[str, Any]]) -> bytes:
+    """
+    섹터별 성과 수평 바 차트 생성
+
+    Args:
+        sector_data: [{'sector': str, 'avgReturn': float}, ...]
+
+    Returns:
+        PNG 이미지 바이트
+    """
+    fig, ax = plt.subplots(figsize=(10, 6), facecolor='#1a1f3a')
+    ax.set_facecolor('#0a0e27')
+
+    if not sector_data:
+        sector_data = [{'sector': 'No Data', 'avgReturn': 0}]
+
+    # 수익률 순 정렬
+    sector_data = sorted(sector_data, key=lambda x: x.get('avgReturn', 0))
+
+    sectors = [d['sector'] for d in sector_data]
+    returns = [d.get('avgReturn', 0) for d in sector_data]
+    bar_colors = ['#10b981' if r >= 0 else '#ef4444' for r in returns]
+
+    bars = ax.barh(sectors, returns, color=bar_colors, alpha=0.85, height=0.6,
+                   edgecolor='#2a2f4a', linewidth=0.5)
+
+    # 값 라벨
+    for bar, value in zip(bars, returns):
+        width = bar.get_width()
+        x_pos = width + 0.2 if width >= 0 else width - 0.2
+        ha = 'left' if width >= 0 else 'right'
+        ax.text(x_pos, bar.get_y() + bar.get_height() / 2,
+                f'{value:+.1f}%', ha=ha, va='center',
+                color='#e5e7eb', fontsize=10, fontweight='bold')
+
+    ax.axvline(x=0, color='#9aa0a6', linestyle='-', linewidth=1)
+
+    ax.set_xlabel('Avg Expected Return (%)', color='#9aa0a6', fontsize=11)
+    ax.set_title('Sector Performance', color='#e5e7eb', fontsize=14,
+                 fontweight='bold', pad=20)
+    ax.tick_params(colors='#9aa0a6', labelsize=10)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#2a2f4a')
+    ax.spines['bottom'].set_color('#2a2f4a')
+    ax.grid(True, alpha=0.1, color='#9aa0a6', axis='x')
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a', bbox_inches='tight')
+    buf.seek(0)
+    plt.close(fig)
+
+    return buf.getvalue()
+
+
+def generate_confidence_gauge(score: float) -> bytes:
+    """
+    신뢰도 게이지 차트 생성 (반원형)
+
+    Args:
+        score: 신뢰도 점수 (0~100)
+
+    Returns:
+        PNG 이미지 바이트
+    """
+    fig, ax = plt.subplots(figsize=(6, 4), facecolor='#1a1f3a')
+
+    score = max(0, min(100, score))
+
+    # 반원형 배경 (구간별 색상)
+    segments = [
+        (0, 30, '#ef4444'),     # 빨강 (Low)
+        (30, 60, '#f59e0b'),    # 주황 (Medium)
+        (60, 80, '#10b981'),    # 초록 (Good)
+        (80, 100, '#059669'),   # 진한 초록 (Excellent)
+    ]
+
+    for start, end, color in segments:
+        theta_start = np.pi * (1 - end / 100)
+        theta_end = np.pi * (1 - start / 100)
+        theta = np.linspace(theta_start, theta_end, 50)
+        x_outer = 1.0 * np.cos(theta)
+        y_outer = 1.0 * np.sin(theta)
+        x_inner = 0.6 * np.cos(theta)
+        y_inner = 0.6 * np.sin(theta)
+        ax.fill(
+            np.concatenate([x_outer, x_inner[::-1]]),
+            np.concatenate([y_outer, y_inner[::-1]]),
+            color=color, alpha=0.3
+        )
+
+    # 점수 영역 (채워진 부분)
+    for start, end, color in segments:
+        actual_end = min(end, score)
+        if actual_end <= start:
+            continue
+        theta_start = np.pi * (1 - actual_end / 100)
+        theta_end = np.pi * (1 - start / 100)
+        theta = np.linspace(theta_start, theta_end, 50)
+        x_outer = 1.0 * np.cos(theta)
+        y_outer = 1.0 * np.sin(theta)
+        x_inner = 0.6 * np.cos(theta)
+        y_inner = 0.6 * np.sin(theta)
+        ax.fill(
+            np.concatenate([x_outer, x_inner[::-1]]),
+            np.concatenate([y_outer, y_inner[::-1]]),
+            color=color, alpha=0.9
+        )
+
+    # 바늘
+    needle_angle = np.pi * (1 - score / 100)
+    ax.plot([0, 0.55 * np.cos(needle_angle)], [0, 0.55 * np.sin(needle_angle)],
+            color='#e5e7eb', linewidth=3, solid_capstyle='round')
+    ax.plot(0, 0, 'o', color='#e5e7eb', markersize=8, zorder=5)
+
+    # 점수 텍스트
+    if score >= 80:
+        score_color = '#059669'
+    elif score >= 60:
+        score_color = '#10b981'
+    elif score >= 30:
+        score_color = '#f59e0b'
+    else:
+        score_color = '#ef4444'
+
+    ax.text(0, -0.15, f'{score:.0f}%', ha='center', va='center',
+            fontsize=28, fontweight='bold', color=score_color)
+    ax.text(0, -0.35, 'Confidence', ha='center', va='center',
+            fontsize=12, color='#9aa0a6')
+
+    # 구간 라벨
+    ax.text(-1.05, -0.05, '0', ha='center', color='#9aa0a6', fontsize=9)
+    ax.text(1.05, -0.05, '100', ha='center', color='#9aa0a6', fontsize=9)
+
+    ax.set_xlim(-1.3, 1.3)
+    ax.set_ylim(-0.5, 1.15)
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    ax.set_title('Model Confidence Score', color='#e5e7eb', fontsize=14,
+                 fontweight='bold', pad=10)
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, facecolor='#1a1f3a', bbox_inches='tight')
+    buf.seek(0)
+    plt.close(fig)
+
+    return buf.getvalue()

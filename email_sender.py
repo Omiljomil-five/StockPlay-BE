@@ -13,7 +13,7 @@ s3 = boto3.client('s3', region_name='ap-northeast-2')
 DYNAMODB_TABLE = os.environ.get('DYNAMODB_TABLE', 'stockplay-main')
 SES_FROM_EMAIL = os.environ.get('SES_FROM_EMAIL', 'yyyyjw@naver.com')
 S3_REPORT_BUCKET = os.environ.get('S3_REPORT_BUCKET', 'stockplay-reports-yjw-20251113')
-API_URL = os.environ.get('API_URL', 'https://rwcdhytnni.execute-api.ap-northeast-2.amazonaws.com/Prod/api')
+API_URL = os.environ.get('API_URL', 'https://4alrpz1t36.execute-api.ap-northeast-2.amazonaws.com/Prod/api')
 
 table = dynamodb.Table(DYNAMODB_TABLE)
 

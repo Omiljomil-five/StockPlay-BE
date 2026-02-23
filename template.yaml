@@ -63,7 +63,7 @@ Resources:
           DYNAMODB_TABLE: "stockplay-main"
           SES_FROM_EMAIL: "yyyyjw@naver.com"
           S3_REPORT_BUCKET: "stockplay-reports-yjw-20251113"
-          API_URL: "https://rwcdhytnni.execute-api.ap-northeast-2.amazonaws.com/Prod/api"
+          API_URL: "https://4alrpz1t36.execute-api.ap-northeast-2.amazonaws.com/Prod/api"
       Policies:
         - DynamoDBReadPolicy:
             TableName: stockplay-main

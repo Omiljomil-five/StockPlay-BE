@@ -50,7 +50,7 @@
 
 ## 📱 Contributors
 
-| 양정우 (PM / Full-Stack) <br> [@mrangjw](https://github.com/mrangjw) | 김민규 (Data Analysis / ML) <br> [@edit0rsky](https://github.com/edit0rsky) | 송진우 (Data Strategy) <br> [@HSSJW](https://github.com/HSSJW) |
+| 양정우 (Full-Stack) <br> [@mrangjw](https://github.com/mrangjw) | 김민규 (Data Analysis / ML) <br> [@edit0rsky](https://github.com/edit0rsky) | 송진우 (PM/Data Strategy) <br> [@HSSJW](https://github.com/HSSJW) |
 |:---:|:---:|:---:|
 | <img width="150" src="https://avatars.githubusercontent.com/u/157506327?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/126232823?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/132650844?v=4"/> |
-| 프로젝트 기획 및 총괄<br>Frontend 개발 (React 19 + TS)<br>Backend API 개발 (FastAPI)<br>AWS 인프라 구축 및 배포 | CRISP-DM 기반 데이터 분석<br>ARIMA/SMA/EWMA 모델 구현<br>Surprise Z-Score 시그널 생성<br>백테스팅 및 전략 검증 | 데이터셋 분석 방향 설계<br>분석 전략 자문 및 피드백<br>비즈니스 요구사항 정의 |
+| Frontend 개발 (React 19 + TS)<br>Backend API 개발 (FastAPI)<br>AWS 인프라 구축 및 배포 | CRISP-DM 기반 데이터 분석<br>ARIMA/SMA/EWMA 모델 구현<br>Surprise Z-Score 시그널 생성<br>백테스팅 및 전략 검증 | 프로젝트 기획 및 총괄<br>데이터셋 분석 방향 설계<br>분석 전략 자문 및 피드백<br>비즈니스 요구사항 정의 |

@@ -29,29 +29,30 @@ async def get_signals(
             if sector is None or enriched['sector'] == sector:
                 enriched_signals.append(enriched)
         
-        # 섹터별 분석 (MoM 제거)
+        # 섹터별 분석 (MoM 추가)
         sector_stats = {}
         for signal in enriched_signals:
             s = signal['sector']
             if s not in sector_stats:
-                sector_stats[s] = {'count': 0, 'total_yoy': 0.0}
+                sector_stats[s] = {'count': 0, 'total_yoy': 0.0, 'total_mom': 0.0}
             sector_stats[s]['count'] += 1
             sector_stats[s]['total_yoy'] += signal['yoyGrowth']
-        
+            sector_stats[s]['total_mom'] += signal.get('momGrowth', 0.0)
+
         # 섹터 분석 결과
         sector_analysis = []
         sector_colors = {
-            'IT': '#4c6fff', '통신서비스': '#10b981', '임의소비재': '#f59e0b',
-            '산업재': '#ef4444', '에너지': '#818cf8', '헬스케어': '#ec4899',
-            '필수소비재': '#8b5cf6', '금융': '#06b6d4', '소재': '#f97316',
-            '유틸리티': '#84cc16', '부동산': '#a855f7'
+            '반도체': '#4c6fff', '자동차': '#10b981', '조선': '#f59e0b',
+            '바이오': '#ec4899', '기계': '#818cf8', '철강': '#ef4444',
+            '석유화학': '#8b5cf6', '디스플레이': '#06b6d4',
         }
-        
+
         for sector_name, stats in sector_stats.items():
             count = stats['count']
             sector_analysis.append({
                 'sector': sector_name,
                 'avgYoYGrowth': round(stats['total_yoy'] / count, 1),
+                'avgMoMGrowth': round(stats['total_mom'] / count, 1),
                 'signalCount': count,
                 'color': sector_colors.get(sector_name, '#6b7280'),
                 'period': period
@@ -60,11 +61,9 @@ async def get_signals(
         # 성과 계산
         if enriched_signals:
             avg_return = sum(s['expectedReturn'] for s in enriched_signals) / len(enriched_signals)
-            avg_confidence = sum(s['confidenceScore'] for s in enriched_signals) / len(enriched_signals)
         else:
             avg_return = 0
-            avg_confidence = 0
-        
+
         # 응답 데이터 구성
         from datetime import datetime
         result = {
@@ -72,9 +71,9 @@ async def get_signals(
             'topPicks': enriched_signals[:limit],
             'performance': {
                 'avgReturn': round(avg_return, 1),
-                'winRate': round(avg_confidence, 1),
-                'sharpeRatio': 1.8,
-                'maxDrawdown': -8.5,
+                'winRate': 66.7,
+                'sharpeRatio': 0.76,
+                'maxDrawdown': -3.61,
                 'period': period
             },
             'sectorAnalysis': sector_analysis,

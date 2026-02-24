@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<style>
+@font-face {
+  font-family: 'NanumGothic';
+  src: url('file:///var/task/fonts/NanumGothic-Regular.ttf');
+  font-weight: normal;
+}
+@font-face {
+  font-family: 'NanumGothic';
+  src: url('file:///var/task/fonts/NanumGothic-Bold.ttf');
+  font-weight: bold;
+}
+
+@page {
+  size: A4;
+  margin: 25mm;
+}
+
+:root {
+  --navy: #1B2A4A;
+  --text-dark: #2C3E50;
+  --text-light: #95A5A6;
+  --bg-card: #F8F9FA;
+  --border: #E5E8EB;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'NanumGothic', sans-serif;
+  color: var(--text-dark);
+  font-size: 10pt;
+}
+
+.title {
+  text-align: center;
+  font-size: 24pt;
+  font-weight: bold;
+  color: var(--navy);
+  margin-bottom: 24px;
+}
+
+.heading {
+  font-size: 16pt;
+  font-weight: bold;
+  color: var(--navy);
+  margin: 12px 0;
+}
+
+.perf-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 32px;
+}
+.perf-table th {
+  background: var(--navy);
+  color: white;
+  font-size: 12pt;
+  padding: 12px;
+  text-align: center;
+}
+.perf-table td {
+  background: var(--bg-card);
+  font-size: 11pt;
+  padding: 8px 10px;
+  text-align: center;
+  border: 0.5px solid var(--border);
+}
+
+.footer {
+  text-align: center;
+  font-size: 8pt;
+  color: var(--text-light);
+  margin-top: 32px;
+}
+</style>
+</head>
+<body>
+
+<div class="title">StockPlay Monthly Report<br/>{{ date_str }}</div>
+
+<div class="heading">Backtest Performance</div>
+
+<table class="perf-table">
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Avg Return</td><td>+{{ avg_return }}%</td></tr>
+  <tr><td>Win Rate</td><td>{{ win_rate }}%</td></tr>
+  <tr><td>Sharpe Ratio</td><td>{{ sharpe_ratio }}</td></tr>
+  <tr><td>Max Drawdown</td><td>{{ max_drawdown }}%</td></tr>
+</table>
+
+<div class="footer">
+  Generated: {{ created_date }}<br/><br/>
+  This report is for investment reference purposes only.
+</div>
+
+</body>
+</html>

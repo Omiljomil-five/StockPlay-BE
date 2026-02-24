@@ -6,19 +6,19 @@ Globals:
   Function:
     Timeout: 30
     MemorySize: 1024
-    Runtime: python3.12
     Environment:
       Variables:
         PYTHONPATH: /var/task
+  Api:
+    BinaryMediaTypes:
+      - "*/*"
 
 Resources:
-  # 기존 API Lambda
+  # 메인 API Lambda (Docker — WeasyPrint pango/cairo 의존성)
   StockPlayAPI:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: stockplay-api
-      Handler: lambda_handler.handler
-      CodeUri: .
+      PackageType: Image
       Description: StockPlay FastAPI Backend
       Environment:
         Variables:
@@ -28,6 +28,7 @@ Resources:
           DYNAMODB_TABLE: "stockplay-main"
           SES_FROM_EMAIL: "yyyyjw@naver.com"
           DEBUG: "false"
+          FONTCONFIG_FILE: "/var/task/fonts/fonts.conf"
       Policies:
         - S3ReadPolicy:
             BucketName: stockplay-data-yjw-20251113
@@ -48,12 +49,17 @@ Resources:
           Properties:
             Path: /{proxy+}
             Method: ANY
+    Metadata:
+      DockerTag: latest
+      DockerContext: .
+      Dockerfile: Dockerfile
 
   # 이메일 발송 Lambda
   EmailSenderFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: stockplay-email-sender
+      Runtime: python3.12
       Handler: email_sender.lambda_handler
       CodeUri: .
       Description: StockPlay Email Sender (Daily Report)
@@ -79,6 +85,33 @@ Resources:
             Description: Send daily report at 9 AM KST (midnight UTC)
             Enabled: true
 
+  # 월간 데이터 자동 갱신 Lambda (Docker)
+  DataUpdaterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stockplay-data-updater
+      PackageType: Image
+      Timeout: 900
+      MemorySize: 2048
+      Environment:
+        Variables:
+          S3_DATA_BUCKET: "stockplay-data-yjw-20251113"
+          CUSTOMS_API_KEY: "fqJry%2BXMzG3OfIzPup5MZNOTmNCbr3lY%2FzkZ%2FEJQ61zuEvZPCrTG3YRsWxhOQTsrSWA8fydBszKR04ecBbknmg%3D%3D"
+      Policies:
+        - S3CrudPolicy:
+            BucketName: stockplay-data-yjw-20251113
+      Events:
+        MonthlySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 3 20 * ? *)
+            Description: Monthly data update at 12:00 KST (03:00 UTC) on 20th
+            Enabled: true
+    Metadata:
+      DockerTag: latest
+      DockerContext: ./data_updater
+      Dockerfile: Dockerfile
+
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint URL"
@@ -91,3 +124,7 @@ Outputs:
   EmailSenderArn:
     Description: "Email Sender Lambda ARN"
     Value: !GetAtt EmailSenderFunction.Arn
+
+  DataUpdaterArn:
+    Description: "Data Updater Lambda ARN"
+    Value: !GetAtt DataUpdaterFunction.Arn

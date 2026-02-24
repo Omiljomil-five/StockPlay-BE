@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<style>
+/* ── Fonts ──────────────────────────────────────────────── */
+@font-face {
+  font-family: 'NanumGothic';
+  src: url('file:///var/task/fonts/NanumGothic-Regular.ttf');
+  font-weight: normal;
+}
+@font-face {
+  font-family: 'NanumGothic';
+  src: url('file:///var/task/fonts/NanumGothic-Bold.ttf');
+  font-weight: bold;
+}
+
+/* ── Page Setup ─────────────────────────────────────────── */
+@page {
+  size: A4;
+  margin: 0;
+}
+@page :first {
+  @bottom-center { content: none; }
+}
+
+/* ── Variables ──────────────────────────────────────────── */
+:root {
+  --navy: #1B2A4A;
+  --slate: #3D5A80;
+  --gold: #C9A96E;
+  --text-dark: #2C3E50;
+  --text-medium: #5D6D7E;
+  --text-light: #95A5A6;
+  --bg-card: #F8F9FA;
+  --border: #E5E8EB;
+  --signal-buy: #0E7C47;
+  --signal-hold: #D4A017;
+  --signal-sell: #C0392B;
+  --white: #FFFFFF;
+}
+
+/* ── Base ───────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'NanumGothic', sans-serif;
+  color: var(--text-dark);
+  font-size: 9pt;
+  line-height: 1.5;
+}
+
+.page {
+  width: 210mm;
+  height: 297mm;
+  padding: 12mm 14mm 16mm 14mm;
+  position: relative;
+  page-break-after: always;
+  overflow: hidden;
+}
+.page:last-child { page-break-after: auto; }
+
+/* ── Page Header (pages 2-3) ────────────────────────────── */
+.page-header {
+  background: var(--navy);
+  height: 28px;
+  margin: -12mm -14mm 12px -14mm;
+  padding: 0 14mm;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--gold);
+}
+.page-header .brand {
+  color: var(--white);
+  font-weight: bold;
+  font-size: 9pt;
+}
+.page-header .label {
+  color: var(--gold);
+  font-size: 7.5pt;
+}
+
+/* ── Page Footer ────────────────────────────────────────── */
+.page-footer {
+  position: absolute;
+  bottom: 8mm;
+  left: 14mm;
+  right: 14mm;
+  border-top: 0.5px solid var(--gold);
+  padding-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 6.5pt;
+  color: var(--text-light);
+}
+
+/* ══════════════════════════════════════════════════════════
+   PAGE 1 — Cover + Executive Summary
+   ══════════════════════════════════════════════════════════ */
+
+/* Hero Section */
+.hero {
+  background: var(--navy);
+  margin: -12mm -14mm 0 -14mm;
+  padding: 40px 14mm 36px;
+  text-align: center;
+}
+.hero .brand-text {
+  color: var(--gold);
+  font-weight: bold;
+  font-size: 11pt;
+  letter-spacing: 6px;
+  margin-bottom: 4px;
+}
+.hero .sub-text {
+  color: #B0B8C8;
+  font-size: 8pt;
+  margin-bottom: 18px;
+}
+.hero .company-name {
+  color: var(--white);
+  font-size: 22pt;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.hero .info-line {
+  color: var(--text-light);
+  font-size: 9pt;
+}
+
+/* Signal Bar */
+.signal-bar {
+  text-align: center;
+  padding: 8px 0;
+  font-size: 13pt;
+  font-weight: bold;
+  color: var(--text-dark);
+  border-bottom: 3px solid var(--signal-{{ signal_color }});
+  margin-bottom: 18px;
+}
+
+/* Metric Cards Row */
+.metric-cards {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.metric-card {
+  flex: 1;
+  background: var(--bg-card);
+  border: 0.5px solid var(--border);
+  border-top: 3px solid var(--border);
+  text-align: center;
+  padding: 16px 8px 12px;
+}
+.metric-card.buy  { border-top-color: var(--signal-buy); }
+.metric-card.hold { border-top-color: var(--signal-hold); }
+.metric-card.sell { border-top-color: var(--signal-sell); }
+
+.metric-card .value {
+  font-size: 22pt;
+  font-weight: bold;
+  color: var(--navy);
+  line-height: 1.2;
+}
+.metric-card .label {
+  font-size: 8pt;
+  color: var(--text-medium);
+  margin-top: 4px;
+}
+
+/* Secondary Metrics Table */
+.secondary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.secondary-table th {
+  background: var(--navy);
+  color: var(--white);
+  font-size: 9pt;
+  padding: 10px 8px;
+  text-align: center;
+}
+.secondary-table td {
+  background: var(--bg-card);
+  font-size: 11pt;
+  padding: 10px 8px;
+  text-align: center;
+  border: 0.5px solid var(--border);
+}
+
+/* ══════════════════════════════════════════════════════════
+   PAGE 2 — Technical Analysis
+   ══════════════════════════════════════════════════════════ */
+
+/* Section Header */
+.section-header {
+  border-left: 4px solid var(--gold);
+  padding: 4px 0 4px 12px;
+  margin-bottom: 10px;
+}
+.section-header .title {
+  color: var(--navy);
+  font-weight: bold;
+  font-size: 13pt;
+}
+.section-header .subtitle {
+  color: var(--text-medium);
+  font-size: 8pt;
+}
+
+.sub-heading {
+  color: var(--slate);
+  font-weight: bold;
+  font-size: 11pt;
+  margin: 8px 0 6px;
+}
+
+.chart-full {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.chart-full img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-pair {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.chart-pair .chart-half {
+  flex: 1;
+}
+.chart-pair .chart-half img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-unavailable {
+  font-size: 7.5pt;
+  color: var(--text-light);
+  text-align: center;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 0.5px solid var(--border);
+}
+
+/* ══════════════════════════════════════════════════════════
+   PAGE 3 — AI Analysis + Risk
+   ══════════════════════════════════════════════════════════ */
+
+/* Analysis Box */
+.analysis-box {
+  background: var(--bg-card);
+  border: 0.5px solid var(--border);
+  border-left: 4px solid var(--slate);
+  padding: 10px 10px 10px 14px;
+  margin-bottom: 6px;
+}
+.analysis-box.navy  { border-left-color: var(--navy); }
+.analysis-box.red   { border-left-color: var(--signal-sell); }
+
+.analysis-box .box-label {
+  font-weight: bold;
+  font-size: 10pt;
+  margin-bottom: 3px;
+}
+.analysis-box.navy .box-label  { color: var(--navy); }
+.analysis-box.red  .box-label  { color: var(--signal-sell); }
+.analysis-box .box-label       { color: var(--slate); }
+
+.analysis-box .box-body {
+  font-size: 9pt;
+  color: var(--text-dark);
+  line-height: 1.45;
+}
+
+/* Gauge */
+.gauge-wrapper {
+  text-align: center;
+  margin: 10px 0;
+}
+.gauge-wrapper img {
+  width: 200px;
+  height: auto;
+}
+
+/* Tech Indicators Table */
+.tech-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+.tech-table th {
+  background: var(--navy);
+  color: var(--white);
+  font-size: 9pt;
+  padding: 8px 6px;
+  text-align: center;
+}
+.tech-table td {
+  font-size: 9pt;
+  padding: 6px;
+  text-align: center;
+  border-bottom: 0.5px solid var(--border);
+}
+.tech-table tr:nth-child(even) td { background: var(--bg-card); }
+.tech-table tr:nth-child(odd) td  { background: var(--white); }
+
+/* Disclaimer */
+.disclaimer {
+  border-top: 0.5px solid var(--gold);
+  padding-top: 6px;
+  font-size: 7pt;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+.disclaimer b { color: var(--text-medium); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 1 — Cover + Executive Summary
+     ═══════════════════════════════════════════════════════ -->
+<div class="page">
+  <!-- Hero -->
+  <div class="hero">
+    <div class="brand-text">S T O C K P L A Y</div>
+    <div class="sub-text">EQUITY RESEARCH</div>
+    <div class="company-name">{{ company_name }}</div>
+    <div class="info-line">{{ symbol }}  |  {{ sector }}  |  {{ date_str }}  |  {{ period }}</div>
+  </div>
+
+  <!-- Signal Bar -->
+  <div class="signal-bar">{{ signal_label }}</div>
+
+  <!-- 3 Metric Cards -->
+  <div class="metric-cards">
+    <div class="metric-card {{ ret_class }}">
+      <div class="value">{{ expected_return }}</div>
+      <div class="label">Expected Return</div>
+    </div>
+    <div class="metric-card {{ vs_class }}">
+      <div class="value">{{ vs_kospi }}</div>
+      <div class="label">vs KOSPI</div>
+    </div>
+    <div class="metric-card {{ conf_class }}">
+      <div class="value">{{ confidence }}</div>
+      <div class="label">Confidence</div>
+    </div>
+  </div>
+
+  <!-- Secondary Metrics Table -->
+  <table class="secondary-table">
+    <tr>
+      <th>Surprise Z-Score</th>
+      <th>YoY Growth</th>
+      <th>KOSPI Return</th>
+    </tr>
+    <tr>
+      <td>{{ surprise_z }}</td>
+      <td>{{ yoy_growth }}</td>
+      <td>{{ kospi_return }}</td>
+    </tr>
+  </table>
+
+  <div class="page-footer">
+    <span>Confidential  |  For authorized recipients only</span>
+    <span>Page 1</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 2 — Technical Analysis
+     ═══════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <span class="brand">STOCKPLAY</span>
+    <span class="label">EQUITY RESEARCH</span>
+  </div>
+
+  <div class="section-header">
+    <div class="title">Technical Analysis</div>
+    <div class="subtitle">{{ company_name }} ({{ symbol }})</div>
+  </div>
+
+  <!-- KOSPI Chart -->
+  <div class="sub-heading">KOSPI Market Analysis</div>
+  {% if kospi_chart_b64 %}
+  <div class="chart-full">
+    <img src="data:image/png;base64,{{ kospi_chart_b64 }}" alt="KOSPI Chart"/>
+  </div>
+  {% else %}
+  <div class="chart-unavailable">KOSPI chart unavailable</div>
+  {% endif %}
+
+  <!-- Surprise + Comparison side by side -->
+  <div class="chart-pair">
+    <div class="chart-half">
+      {% if surprise_chart_b64 %}
+      <img src="data:image/png;base64,{{ surprise_chart_b64 }}" alt="Surprise Chart"/>
+      {% else %}
+      <div class="chart-unavailable">Surprise Z-Score chart unavailable</div>
+      {% endif %}
+    </div>
+    <div class="chart-half">
+      {% if comparison_chart_b64 %}
+      <img src="data:image/png;base64,{{ comparison_chart_b64 }}" alt="Comparison Chart"/>
+      {% else %}
+      <div class="chart-unavailable">Comparison chart unavailable</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>Confidential  |  For authorized recipients only</span>
+    <span>Page 2</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 3 — AI Analysis + Risk
+     ═══════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <span class="brand">STOCKPLAY</span>
+    <span class="label">EQUITY RESEARCH</span>
+  </div>
+
+  <div class="section-header">
+    <div class="title">AI Analysis &amp; Risk Assessment</div>
+    <div class="subtitle">Generated {{ generated_at }}</div>
+  </div>
+
+  <!-- Analysis Boxes -->
+  <div class="analysis-box">
+    <div class="box-label">Market Overview</div>
+    <div class="box-body">{{ overview_text }}</div>
+  </div>
+
+  <div class="analysis-box navy">
+    <div class="box-label">Investment Opinion</div>
+    <div class="box-body">{{ opinion_text }}</div>
+  </div>
+
+  <div class="analysis-box red">
+    <div class="box-label">Risk Factors</div>
+    <div class="box-body">{{ risk_text }}</div>
+  </div>
+
+  <!-- Confidence Gauge -->
+  {% if gauge_chart_b64 %}
+  <div class="gauge-wrapper">
+    <img src="data:image/png;base64,{{ gauge_chart_b64 }}" alt="Confidence Gauge"/>
+  </div>
+  {% endif %}
+
+  <!-- Technical Indicators Table -->
+  <div class="sub-heading">Technical Indicators</div>
+  <table class="tech-table">
+    <tr>
+      <th>Indicator</th>
+      <th>Value</th>
+      <th>Interpretation</th>
+    </tr>
+    {% for row in tech_indicators %}
+    <tr>
+      <td>{{ row.indicator }}</td>
+      <td>{{ row.value }}</td>
+      <td>{{ row.interpretation }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <!-- Disclaimer -->
+  <div class="disclaimer">
+    <b>Disclaimer</b><br/>
+    This report is generated by StockPlay AI for reference purposes only.
+    Investment decisions and their outcomes are the sole responsibility of the investor.
+    Past performance does not guarantee future results.
+    StockPlay provides data analysis and does not bear responsibility for investment losses.
+    <br/><br/>
+    <b>Generated:</b> {{ generated_at_full }}<br/>
+    &copy; 2025 StockPlay. All rights reserved.
+  </div>
+
+  <div class="page-footer">
+    <span>Confidential  |  For authorized recipients only</span>
+    <span>Page 3</span>
+  </div>
+</div>
+
+</body>
+</html>

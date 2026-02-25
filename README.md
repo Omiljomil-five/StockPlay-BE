@@ -33,17 +33,20 @@ CRISP-DM 방법론에 따라 수출 데이터의 주가 예측력을 검증하�
 ### Dashboard
 실시간 투자 시그널 카드 (BUY/HOLD/SELL) 표시, 섹터별 필터링 지원. 8개 섹터 16종목에 대한 시그널과 성과 지표를 한눈에 확인할 수 있습니다.
 
-<!-- 스크린샷: Dashboard 전체 화면 -->
+<img width="1482" height="853" alt="스크린샷 2026-02-25 오전 9 05 17" src="https://github.com/user-attachments/assets/e64569aa-0e56-41c1-9951-344788bab2d2" />
+
 
 ### Reports
 47개월치 월별 리포트 열람 및 AI 분석이 포함된 3페이지 프리미엄 PDF 다운로드. Jinja2 + WeasyPrint 기반 템플릿으로 KOSPI 차트, Surprise Z-Score, 기술적 지표를 시각화합니다.
 
-<!-- 스크린샷: Reports 목록 + PDF 미리보기 -->
+<img width="1483" height="848" alt="스크린샷 2026-02-25 오전 9 05 49" src="https://github.com/user-attachments/assets/e5a33ff1-6fe5-4a44-adec-3f4ad50fdc37" />
+
 
 ### Subscribe
 이메일 구독 등록 시 SES를 통한 환영 메일 발송. EventBridge 스케줄러가 매일 오전 9시(KST)에 구독자 전원에게 일일 트레이딩 리포트를 자동 발송합니다.
 
-<!-- 스크린샷: Subscribe 화면 -->
+<img width="1485" height="845" alt="스크린샷 2026-02-25 오전 9 06 19" src="https://github.com/user-attachments/assets/6b01c384-82ed-4760-944d-1cd21e102d6f" />
+
 
 ---
 

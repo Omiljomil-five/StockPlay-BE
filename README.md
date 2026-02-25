@@ -231,7 +231,7 @@ StockPlay-BE/
 
 ```bash
 # .env
-USE_S3_DATA=false          # 로컬 data/ 디렉토리 사용
+USE_S3_DATA=false  # 로컬 data/ 디렉토리 사용
 DEBUG=true
 DYNAMODB_TABLE=stockplay-main
 SES_FROM_EMAIL=your@email.com

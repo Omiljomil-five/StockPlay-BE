@@ -1,0 +1,188 @@
+<mxGraphModel>
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+
+    <!-- Title -->
+    <mxCell id="title" value="StockPlay - Data Pipeline" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#1B2A4A;" vertex="1" parent="1">
+      <mxGeometry x="200" y="5" width="400" height="35" as="geometry"/>
+    </mxCell>
+
+    <!-- Phase 1: Data Collection -->
+    <mxCell id="phase1-label" value="1. Data Collection" style="text;html=1;fontSize=11;fontStyle=1;align=left;fillColor=none;strokeColor=none;fontColor=#E65100;" vertex="1" parent="1">
+      <mxGeometry x="20" y="45" width="150" height="20" as="geometry"/>
+    </mxCell>
+
+    <!-- Customs API -->
+    <mxCell id="customs" value="관세청 OpenAPI&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;수출 데이터 (월별)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="20" y="70" width="130" height="45" as="geometry"/>
+    </mxCell>
+
+    <!-- DataUpdater -->
+    <mxCell id="updater" value="DataUpdater Lambda&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;매월 20일 자동 실행&lt;br&gt;Docker · 900s / 2GB&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="210" y="65" width="150" height="55" as="geometry"/>
+    </mxCell>
+
+    <!-- S3 Data -->
+    <mxCell id="s3data" value="S3 Data Bucket&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;merged_signals.csv&lt;br&gt;export_by_sector.csv&lt;br&gt;kospi_real.csv&lt;br&gt;sector_mapping.csv&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="420" y="50" width="150" height="85" as="geometry"/>
+    </mxCell>
+
+    <!-- Edges phase 1 -->
+    <mxCell id="e1" style="endArrow=classic;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="1" source="customs" target="updater">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e2" style="endArrow=classic;strokeColor=#82b366;strokeWidth=1.5;" edge="1" parent="1" source="updater" target="s3data">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e2-label" value="CSV 저장" style="text;html=1;fontSize=9;align=center;fillColor=none;strokeColor=none;fontColor=#666;" vertex="1" parent="1">
+      <mxGeometry x="370" y="68" width="50" height="15" as="geometry"/>
+    </mxCell>
+
+    <!-- Phase 2: Processing -->
+    <mxCell id="phase2-label" value="2. Signal Processing" style="text;html=1;fontSize=11;fontStyle=1;align=left;fillColor=none;strokeColor=none;fontColor=#E65100;" vertex="1" parent="1">
+      <mxGeometry x="20" y="150" width="150" height="20" as="geometry"/>
+    </mxCell>
+
+    <!-- MLPredictor -->
+    <mxCell id="mlpred" value="MLPredictor&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;Lambda Cold Start 시 로드&lt;br&gt;ARIMA(1,2,1) 예측&lt;br&gt;Surprise Z-Score 산출&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="120" y="175" width="160" height="65" as="geometry"/>
+    </mxCell>
+
+    <!-- Signal Generator -->
+    <mxCell id="siggen" value="SignalGenerator&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;5-Factor 시그널&lt;br&gt;BUY / HOLD / SELL&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="340" y="180" width="140" height="55" as="geometry"/>
+    </mxCell>
+
+    <!-- S3 to MLPredictor -->
+    <mxCell id="e3" style="endArrow=classic;strokeColor=#F9A825;strokeWidth=1.5;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s3data" target="mlpred">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="465" y="150"/>
+          <mxPoint x="200" y="150"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e3-label" value="CSV 로드" style="text;html=1;fontSize=9;align=center;fillColor=none;strokeColor=none;fontColor=#666;" vertex="1" parent="1">
+      <mxGeometry x="300" y="137" width="50" height="15" as="geometry"/>
+    </mxCell>
+
+    <mxCell id="e4" style="endArrow=classic;strokeColor=#3F51B5;strokeWidth=1.5;" edge="1" parent="1" source="mlpred" target="siggen">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Phase 3: API & Output -->
+    <mxCell id="phase3-label" value="3. API &amp; Report Generation" style="text;html=1;fontSize=11;fontStyle=1;align=left;fillColor=none;strokeColor=none;fontColor=#E65100;" vertex="1" parent="1">
+      <mxGeometry x="20" y="265" width="200" height="20" as="geometry"/>
+    </mxCell>
+
+    <!-- GET /signals -->
+    <mxCell id="api-signals" value="GET /api/signals&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;시그널 조회&lt;br&gt;섹터별 필터링&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#C62828;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="40" y="295" width="130" height="50" as="geometry"/>
+    </mxCell>
+
+    <!-- POST /reports -->
+    <mxCell id="api-reports" value="POST /api/reports&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;PDF 리포트 생성&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#C62828;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="210" y="295" width="130" height="50" as="geometry"/>
+    </mxCell>
+
+    <!-- Signal to APIs -->
+    <mxCell id="e5" style="endArrow=classic;strokeColor=#3F51B5;strokeWidth=1.5;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="siggen" target="api-signals">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="105" y="260"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e6" style="endArrow=classic;strokeColor=#3F51B5;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="siggen" target="api-reports">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="410" y="260"/>
+          <mxPoint x="275" y="260"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- Claude AI -->
+    <mxCell id="claude" value="Claude AI&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;투자 분석 텍스트&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="380" y="295" width="110" height="50" as="geometry"/>
+    </mxCell>
+
+    <!-- WeasyPrint -->
+    <mxCell id="weasp" value="Jinja2 + WeasyPrint&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;3페이지 PDF 생성&lt;br&gt;Pillow 차트 렌더링&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="520" y="290" width="150" height="60" as="geometry"/>
+    </mxCell>
+
+    <!-- Reports → Claude, WeasyPrint -->
+    <mxCell id="e7" style="endArrow=classic;strokeColor=#C62828;strokeWidth=1.5;" edge="1" parent="1" source="api-reports" target="claude">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e8" style="endArrow=classic;strokeColor=#7B1FA2;strokeWidth=1.5;" edge="1" parent="1" source="claude" target="weasp">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Phase 4: Delivery -->
+    <mxCell id="phase4-label" value="4. Delivery" style="text;html=1;fontSize=11;fontStyle=1;align=left;fillColor=none;strokeColor=none;fontColor=#E65100;" vertex="1" parent="1">
+      <mxGeometry x="20" y="375" width="100" height="20" as="geometry"/>
+    </mxCell>
+
+    <!-- S3 Reports -->
+    <mxCell id="s3reports" value="S3 Reports Bucket&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;PDF 저장&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="300" y="395" width="130" height="40" as="geometry"/>
+    </mxCell>
+
+    <!-- SES -->
+    <mxCell id="ses2" value="SES&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;이메일 발송&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="480" y="395" width="100" height="40" as="geometry"/>
+    </mxCell>
+
+    <!-- Subscriber -->
+    <mxCell id="subscriber" value="구독자&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;이메일 수신&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="630" y="395" width="100" height="40" as="geometry"/>
+    </mxCell>
+
+    <!-- WeasyPrint → S3 Reports -->
+    <mxCell id="e9" style="endArrow=classic;strokeColor=#7B1FA2;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="weasp" target="s3reports">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="595" y="370"/>
+          <mxPoint x="365" y="370"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- S3 Reports → SES -->
+    <mxCell id="e10" style="endArrow=classic;strokeColor=#F9A825;strokeWidth=1.5;" edge="1" parent="1" source="s3reports" target="ses2">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- SES → Subscriber -->
+    <mxCell id="e11" style="endArrow=classic;strokeColor=#2E7D32;strokeWidth=1.5;" edge="1" parent="1" source="ses2" target="subscriber">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Dashboard (FE) output -->
+    <mxCell id="dashboard" value="Dashboard&lt;br&gt;&lt;font style='font-size:9px;color:#666;'&gt;React FE&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="40" y="395" width="100" height="40" as="geometry"/>
+    </mxCell>
+
+    <!-- API signals → Dashboard -->
+    <mxCell id="e12" style="endArrow=classic;strokeColor=#C62828;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="api-signals" target="dashboard">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="105" y="370"/>
+          <mxPoint x="90" y="370"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- PDF download arrow -->
+    <mxCell id="pdf-dl" value="PDF 다운로드" style="text;html=1;fontSize=9;align=center;fillColor=none;strokeColor=none;fontColor=#666;" vertex="1" parent="1">
+      <mxGeometry x="165" y="395" width="80" height="15" as="geometry"/>
+    </mxCell>
+    <mxCell id="e13" style="endArrow=classic;strokeColor=#999;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="dashboard" target="s3reports">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+  </root>
+</mxGraphModel>

@@ -49,51 +49,11 @@ CRISP-DM 방법론에 따라 수출 데이터의 주가 예측력을 검증하�
 
 ## 시스템 아키텍처
 
-```
-┌─────────────┐     ┌──────────────┐     ┌───────────────┐     ┌──────────────────────────┐
-│  React FE   │────▶│  CloudFront  │────▶│  API Gateway  │────▶│  StockPlayAPI Lambda     │
-│  (Vite+TS)  │     │  (SPA 라우팅) │     │  (REST, CORS) │     │  (FastAPI + Docker)      │
-└─────────────┘     └──────────────┘     └───────────────┘     └────────┬─────────────────┘
-                                                                        │
-                                          ┌─────────────────────────────┼─────────────────┐
-                                          │                             │                 │
-                                   ┌──────▼──────┐             ┌───────▼───────┐  ┌──────▼──────┐
-                                   │     S3      │             │   DynamoDB    │  │     SES     │
-                                   │ data/reports│             │  구독자 관리   │  │  이메일 발송  │
-                                   └─────────────┘             └───────────────┘  └─────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│  EventBridge Scheduler                                                                      │
-│                                                                                             │
-│  [매일 00:00 UTC (9AM KST)] ──▶ EmailSender Lambda ──▶ 구독자 일일 리포트 발송              │
-│  [매월 20일 03:00 UTC]      ──▶ DataUpdater Lambda  ──▶ 관세청 API → S3 데이터 갱신         │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+![System Architecture](docs/system-architecture.png)
 
 ### 데이터 파이프라인
 
-```
-관세청 OpenAPI ──▶ DataUpdater Lambda (매월 20일)
-                         │
-                         ▼
-                   S3 Data Bucket (CSV: export_by_sector, merged_signals, kospi 등)
-                         │
-                         ▼
-                   MLPredictor (Lambda 시작 시 로드)
-                         │
-                    ┌────┴────┐
-                    ▼         ▼
-             GET /signals   POST /reports/generate
-             (시그널 조회)   (PDF 생성)
-                              │
-                         ┌────┴────┐
-                         ▼         ▼
-                   Claude AI   Jinja2 + WeasyPrint
-                   (분석 텍스트)  (3페이지 PDF)
-                         │         │
-                         ▼         ▼
-                   S3 Reports Bucket → SES 이메일 발송
-```
+![Data Pipeline](docs/data-pipeline.png)
 
 ---
 
